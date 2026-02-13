@@ -2,6 +2,7 @@
 # repo-menu.sh
 # Executar dentro de um repositório (ou pasta) em ~/workspace/repos/*
 # Requer: bash, git, curl (e opcionalmente gh ou forgejo-cli/tea para criar repo remoto)
+#!/usr/bin/env bash
 set -euo pipefail
 
 # =========================
@@ -10,9 +11,11 @@ set -euo pipefail
 TEMPLATE_DIR="${TEMPLATE_DIR:-$HOME/workspace/repos/templates/repository}"
 REQUIRED_FILES=( ".gitattributes" ".gitignore" ".prettierrc" "README.md" "VERSION" )
 
-# Se quiseres forçar um remoto específico (ex.: forgejo):
-#   export DEFAULT_REMOTE_URL_BASE="https://forgejo.lbtec.org"
 DEFAULT_REMOTE_URL_BASE="${DEFAULT_REMOTE_URL_BASE:-}"
+
+# ===== Defaults de Forgejo (sem tea) =====
+FORGEJO_BASE_URL="${FORGEJO_BASE_URL:-https://forgejo.lbtec.org}"
+FORGEJO_OWNER="${FORGEJO_OWNER:-lmbalcao}"
 
 # =========================
 # HELPERS
@@ -187,6 +190,9 @@ select_from_two() {
 action_1_init_git_and_remote() {
   require_cmd git
 
+  local url
+  local name
+
   local root
   root="$(repo_root)"
   cd "$root"
@@ -206,6 +212,7 @@ action_1_init_git_and_remote() {
     git commit -m "Initial commit"
     info "Commit inicial criado."
   fi
+
 
   # Configurar remoto + criar repo remoto
   # Aqui tens 3 caminhos (escolhe 1):
@@ -239,41 +246,42 @@ action_1_init_git_and_remote() {
       gh repo create "$name" "$flag" --source="." --remote=origin --push
       info "Repo GitHub criado e push feito."
       ;;
+# Dentro de action_1_init_git_and_remote(), no "case "$method" in"
+# Substitui o bloco 2) inteiro por este:
+
     2)
-      require_cmd tea
-      # tea usa config local (host/token); cria repo no servidor autenticado
-      # Privacidade: em Gitea/Forgejo, "private" é boolean.
-      local v p s
-      readarray -t _ver < <(read_version_file)
-     v="${_ver[0]}"
-     p="${_ver[1]}"
-     s="${_ver[2]}"
-      local private_flag="--private"
-      [[ "$p" == "public" ]] && private_flag="--private=false"
+      # Forgejo/Gitea SEM tea: configura origin e faz push (não cria repo remoto)
+      local forgejo_base owner proto
+      forgejo_base="${FORGEJO_BASE_URL%/}"
+      owner="${FORGEJO_OWNER}"
+      proto="${FORGEJO_PROTO}"
 
-      # Se quiseres forçar owner/org, exporta TEA_OWNER
-      owner="${TEA_OWNER:-}"
-      if [[ -n "$owner" ]]; then
-        tea repo create --name "$name" --owner "$owner" $private_flag
-        url="$(tea repo show --owner "$owner" "$name" --fields clone_url 2>/dev/null | awk 'NF{print $NF}' | tail -n1 || true)"
+      if [[ "$proto" == "ssh" ]]; then
+        local host
+        host="$(echo "$forgejo_base" | sed -E 's#^https?://##; s#/.*##')"
+        url="git@${host}:${owner}/${name}.git"
       else
-        tea repo create --name "$name" $private_flag
-        url="$(tea repo show "$name" --fields clone_url 2>/dev/null | awk 'NF{print $NF}' | tail -n1 || true)"
+        url="${forgejo_base}/${owner}/${name}.git"
       fi
 
-      if [[ -z "${url:-}" ]]; then
-        warn "Não consegui obter clone_url via tea. Introduz manualmente o URL do remoto."
-        read -r -p "URL do remoto (https/ssh): " url
-      fi
+      echo "Remote Forgejo calculado: $url"
+      read -r -p "Confirmar configurar origin para este URL? [s/N]: " ok
+      case "${ok:-}" in
+        s|S|sim|SIM) ;;
+        *) info "Cancelado."; return 0 ;;
+      esac
 
       if git remote get-url origin >/dev/null 2>&1; then
         git remote set-url origin "$url"
       else
         git remote add origin "$url"
       fi
+
       git push -u origin HEAD
-      info "Repo criado no Forgejo/Gitea e push feito."
+      info "Origin configurado e push executado."
       ;;
+
+
     3)
       read -r -p "URL do remoto (https/ssh): " url
       [[ -n "$url" ]] || die "URL vazio."
