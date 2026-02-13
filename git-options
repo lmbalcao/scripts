@@ -184,6 +184,48 @@ select_from_two() {
   esac
 }
 
+update_readme_version() {
+  # Mantém uma linha no README do tipo: "Versão: X.Y.Z" (ou cria no topo se não existir)
+  local new_v="$1"
+  local root readme
+  root="$(repo_root)"
+  readme="$root/README.md"
+
+  [[ -f "$readme" ]] || return 0
+
+  # Se existir uma linha "Versão:" ou "Version:", substitui
+  if grep -qE '^(Versão|Version)\s*:\s*' "$readme"; then
+    # macOS vs GNU sed: aqui assumo GNU sed (Linux). Se precisares de compat, digo-te como.
+    sed -i -E "s/^(Versão|Version)\s*:\s*.*/Versão: ${new_v}/" "$readme"
+    return 0
+  fi
+
+  # Se não existir, insere no topo
+  { echo "Versão: ${new_v}"; echo; cat "$readme"; } > "${readme}.tmp" && mv "${readme}.tmp" "$readme"
+}
+
+create_and_push_tag() {
+  local v="$1"
+  local tag="v${v}"
+
+  # Não criar se já existir
+  if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+    warn "Tag já existe: ${tag} (não criei novamente)."
+    return 0
+  fi
+
+  # Tag anotada (aparece melhor em UIs)
+  git tag -a "${tag}" -m "Release ${tag}"
+
+  # Push tag (só se origin existir)
+  if git remote get-url origin >/dev/null 2>&1; then
+    git push origin "${tag}"
+    info "Tag publicada: ${tag}"
+  else
+    warn "Sem remoto 'origin'. Tag criada localmente: ${tag}"
+  fi
+}
+
 # =========================
 # MENU ACTIONS
 # =========================
@@ -328,48 +370,18 @@ action_2_toggle_privacy() {
 }
 
 action_3_bump_version() {
-  require_cmd git
-  ensure_required_files
-
-  local v p s
-  readarray -t _ver < <(read_version_file)
-     v="${_ver[0]}"
-     p="${_ver[1]}"
-     s="${_ver[2]}"
-
-  echo "Versão atual: $v"
-  echo "  1) Major"
-  echo "  2) Minor"
-  echo "  3) Patch"
-  read -r -p "Escolhe [1-3] (Enter = cancelar): " choice
-
-  local bump
-  case "${choice:-}" in
-    1) bump="major" ;;
-    2) bump="minor" ;;
-    3) bump="patch" ;;
-    "") info "Cancelado."; return 0 ;;
-    *) die "Opção inválida." ;;
-  esac
-
-  local new_v
-  new_v="$(increment_semver "$v" "$bump")"
-
-  read -r -p "Confirmar alteração ${v} -> ${new_v}? [s/N]: " ok
-  case "${ok:-}" in
-    s|S|sim|SIM) ;;
-    *) info "Cancelado."; return 0 ;;
-  esac
-
   write_version_file "$new_v" "$p" "$s"
-  info "Versão atualizada: $new_v"
+  update_readme_version "$new_v"
+  info "Versão atualizada: $new_v (VERSION + README)"
 
   if is_git_repo; then
     git_commit_if_needed "Bump version to ${new_v}"
     git_push_if_possible
+    create_and_push_tag "${new_v}"
   else
     warn "Não é repo git. Usa a opção 1 para inicializar."
   fi
+
 }
 
 action_4_toggle_state() {
