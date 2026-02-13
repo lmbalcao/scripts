@@ -1,0 +1,103 @@
+# ==================================================
+# Regras gerais (logs, temporários, SO)
+# ==================================================
+*.log
+*.pid
+*.tmp
+*.swp
+*.bak
+*.old
+*~
+logs/
+tmp/
+
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+Icon?
+.Spotlight-V100
+.Trashes
+
+# ==================================================
+# Dependências / builds
+# ==================================================
+node_modules/
+__pycache__/
+.cache/
+dist/
+build/
+
+# ==================================================
+# Docker / Compose
+# ==================================================
+.env
+.env.*
+!.env.example
+.envrc
+docker-compose.override.yml
+.docker/
+.volumes/
+data/
+secrets/
+
+# ==================================================
+# SOPS / encriptação
+# ==================================================
+*.decrypted~
+*.unencrypted
+*.plain
+*.sops.yaml~
+*.sops.yml~
+.agekey
+age.txt
+
+# Permitir apenas ficheiros encriptados
+!*.sops.yaml
+!*.sops.yml
+!*.sops.env
+
+# ==================================================
+# Terraform
+# ==================================================
+.terraform/
+
+# State (NUNCA versionar)
+*.tfstate
+*.tfstate.*
+
+crash.log
+
+# Variáveis sensíveis (permitir exemplos)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.sample
+
+# Overrides locais
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI local
+.terraformrc
+terraform.rc
+
+# Outputs gerados
+terraform/output/
+
+# ==================================================
+# Certificados / chaves (bloqueio total)
+# ==================================================
+*.pem
+*.key
+*.crt
+
+# ==================================================
+# IDE / Git
+# ==================================================
+.vscode/
+.idea/
+*.code-workspace
+**/.git/
