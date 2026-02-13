@@ -62,6 +62,20 @@ read_version_file() {
   echo "$s"
 }
 
+get_version_fields() {
+  local v_name="$1"
+  local p_name="$2"
+  local s_name="$3"
+
+  local arr=()
+  readarray -t arr < <(read_version_file)
+
+  printf -v "$v_name" "%s" "${arr[0]:-1.0.0}"
+  printf -v "$p_name" "%s" "${arr[1]:-private}"
+  printf -v "$s_name" "%s" "${arr[2]:-active}"
+}
+
+
 write_version_file() {
   local v="$1" p="$2" s="$3"
   local f
@@ -125,7 +139,10 @@ ensure_required_files() {
 
   # Garantir defaults do VERSION se foi criado/copied vazio/incompleto
   local v p s
-  IFS=$'\n' read -r v p s < <(read_version_file)
+  readarray -t _ver < <(read_version_file)
+     v="${_ver[0]}"
+     p="${_ver[1]}"
+     s="${_ver[2]}"
   write_version_file "$v" "$p" "$s"
   info "VERSION normalizado: $v / $p / $s"
 }
@@ -211,7 +228,10 @@ action_1_init_git_and_remote() {
       require_cmd gh
       # Privacidade vem do VERSION (private/public)
       local v p s
-      IFS=$'\n' read -r v p s < <(read_version_file)
+      readarray -t _ver < <(read_version_file)
+     v="${_ver[0]}"
+     p="${_ver[1]}"
+     s="${_ver[2]}"
       local flag="--public"
       [[ "$p" == "private" ]] && flag="--private"
 
@@ -224,7 +244,10 @@ action_1_init_git_and_remote() {
       # tea usa config local (host/token); cria repo no servidor autenticado
       # Privacidade: em Gitea/Forgejo, "private" é boolean.
       local v p s
-      IFS=$'\n' read -r v p s < <(read_version_file)
+      readarray -t _ver < <(read_version_file)
+     v="${_ver[0]}"
+     p="${_ver[1]}"
+     s="${_ver[2]}"
       local private_flag="--private"
       [[ "$p" == "public" ]] && private_flag="--private=false"
 
@@ -273,7 +296,10 @@ action_2_toggle_privacy() {
   ensure_required_files
 
   local v p s
-  IFS=$'\n' read -r v p s < <(read_version_file)
+  readarray -t _ver < <(read_version_file)
+     v="${_ver[0]}"
+     p="${_ver[1]}"
+     s="${_ver[2]}"
 
   local new_p
   if [[ "$p" == "private" ]]; then new_p="public"; else new_p="private"; fi
@@ -297,7 +323,10 @@ action_3_bump_version() {
   ensure_required_files
 
   local v p s
-  IFS=$'\n' read -r v p s < <(read_version_file)
+  readarray -t _ver < <(read_version_file)
+     v="${_ver[0]}"
+     p="${_ver[1]}"
+     s="${_ver[2]}"
 
   echo "Versão atual: $v"
   echo "  1) Major"
@@ -339,7 +368,10 @@ action_4_toggle_state() {
   ensure_required_files
 
   local v p s
-  IFS=$'\n' read -r v p s < <(read_version_file)
+  readarray -t _ver < <(read_version_file)
+     v="${_ver[0]}"
+     p="${_ver[1]}"
+     s="${_ver[2]}"
 
   local new_s
   if [[ "$s" == "active" ]]; then new_s="archived"; else new_s="active"; fi
@@ -379,7 +411,10 @@ action_5_ensure_files() {
 
 show_status() {
   local v p s
-  IFS=$'\n' read -r v p s < <(read_version_file)
+  readarray -t _ver < <(read_version_file)
+     v="${_ver[0]}"
+     p="${_ver[1]}"
+     s="${_ver[2]}"
   echo
   echo "Repo: $(repo_root)"
   echo "VERSION:"
