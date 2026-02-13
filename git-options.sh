@@ -16,6 +16,7 @@ DEFAULT_REMOTE_URL_BASE="${DEFAULT_REMOTE_URL_BASE:-}"
 # ===== Defaults de Forgejo (sem tea) =====
 FORGEJO_BASE_URL="${FORGEJO_BASE_URL:-https://forgejo.lbtec.org}"
 FORGEJO_OWNER="${FORGEJO_OWNER:-lmbalcao}"
+FORGEJO_PROTO="${FORGEJO_PROTO:-https}"   # https | ssh
 
 # =========================
 # HELPERS
@@ -376,20 +377,14 @@ action_4_toggle_state() {
   ensure_required_files
 
   local v p s
-  readarray -t _ver < <(read_version_file)
-     v="${_ver[0]}"
-     p="${_ver[1]}"
-     s="${_ver[2]}"
+  get_version_fields v p s
 
   local new_s
-  if [[ "$s" == "active" ]]; then new_s="archived"; else new_s="active"; fi
-
-  echo "Estado atual: $s"
-  read -r -p "Alterar para ${new_s}? [s/N]: " ok
-  case "${ok:-}" in
-    s|S|sim|SIM) ;;
-    *) info "Mantido."; return 0 ;;
-  esac
+  if [[ "$s" == "active" ]]; then
+    new_s="archived"
+  else
+    new_s="active"
+  fi
 
   write_version_file "$v" "$p" "$new_s"
   info "Estado alterado: $s -> $new_s"
@@ -400,10 +395,10 @@ action_4_toggle_state() {
   else
     warn "Não é repo git. Usa a opção 1 para inicializar."
   fi
+}
 
   # NOTA: isto só altera VERSION e faz push.
   # Arquivar de facto o repositório no servidor requer gh/tea.
-}
 
 action_5_ensure_files() {
   require_cmd git
@@ -444,17 +439,18 @@ main_menu() {
     echo "Menu:"
     echo "  1) Gera Git (init + criar repo remoto + push)"
     echo "  2) Altera Privacidade (private/public) + commit + push"
-    echo "  3) Altera Versão (major/minor/patch) + commit + push"
-    echo "  4) Altera Estado (active/archived) + commit + push"
+    echo "  3) Altera Estado (active/archived) + commit + push"
+    echo "  4) Altera Versão (major/minor/patch) + commit + push"
     echo "  5) Garante Ficheiros (copiar do template se faltar) + commit + push"
     echo "  0) Sair"
     read -r -p "Escolhe [0-5]: " opt
 
+
     case "${opt:-}" in
       1) action_1_init_git_and_remote ;;
       2) action_2_toggle_privacy ;;
-      3) action_3_bump_version ;;
-      4) action_4_toggle_state ;;
+      3) action_4_toggle_state ;;
+      4) action_3_bump_version ;;
       5) action_5_ensure_files ;;
       0) exit 0 ;;
       *) warn "Opção inválida." ;;
