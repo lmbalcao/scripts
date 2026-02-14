@@ -1,0 +1,34 @@
+set -euo pipefail
+
+FORGEJO_BASE="https://forgejo.lbtec.org"
+FORGEJO_OWNER="lmbalcao"
+GITHUB_OWNER="lmbalcao"
+
+FORGEJO_TOKEN="$(sed -nE 's#https://[^:]+:([^@]+)@forgejo\.lbtec\.org/.*#\1#p' ~/.git-credentials | head -n1)"
+
+mkdir -p ~/forgejo-mirror
+cd ~/forgejo-mirror
+
+# listar repos Forgejo
+repos=$(curl -s -H "Authorization: token ${FORGEJO_TOKEN}" \
+  "${FORGEJO_BASE}/api/v1/users/${FORGEJO_OWNER}/repos?limit=100" \
+  | jq -r '.[].name')
+
+for repo in $repos; do
+  echo "==== $repo ===="
+
+  # criar repo no GitHub (ignora erro se já existir)
+  gh repo create "${GITHUB_OWNER}/${repo}" --private --confirm 2>/dev/null || true
+
+  # clonar mirror
+  git clone --mirror "${FORGEJO_BASE}/${FORGEJO_OWNER}/${repo}.git"
+  cd "${repo}.git"
+
+  # adicionar remote github
+  git remote add github "https://github.com/${GITHUB_OWNER}/${repo}.git" 2>/dev/null || true
+
+  # push mirror
+  git push --mirror github
+
+  cd ..
+done
