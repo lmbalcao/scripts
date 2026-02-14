@@ -1,0 +1,116 @@
+name: Auto Release (Custom SemVer)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: docker
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get last tag
+        id: lasttag
+        run: |
+          git fetch --tags
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "last=$LAST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Read current version
+        id: version
+        run: |
+          CURRENT=$(cat VERSION)
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Decide bump (custom rules)
+        id: decide
+        run: |
+          set -euo pipefail
+
+          if [ -z "${{ steps.lasttag.outputs.last }}" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${{ steps.lasttag.outputs.last }}..HEAD"
+          fi
+
+          LOG_FULL=$(git log $RANGE --pretty=format:%B)
+          LOG_SUBJ=$(git log $RANGE --pretty=format:%s)
+
+          BUMP="patch"
+
+          # --- MAJOR ---
+          if echo "$LOG_FULL" | grep -qiE 'BREAKING CHANGE'; then
+            BUMP="major"
+          elif echo "$LOG_SUBJ" | grep -qiE '^(feat|fix)!:'; then
+            BUMP="major"
+          elif echo "$LOG_SUBJ" | grep -qiE '^update:'; then
+            BUMP="major"
+
+          # --- MINOR ---
+          elif echo "$LOG_SUBJ" | grep -qiE '^feat:'; then
+            BUMP="minor"
+
+          # --- PATCH ---
+          elif echo "$LOG_SUBJ" | grep -qiE '^fix:'; then
+            BUMP="patch"
+          fi
+
+          echo "bump=$BUMP" >> $GITHUB_OUTPUT
+
+      - name: Bump version
+        id: bump
+        run: |
+          set -euo pipefail
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${{ steps.version.outputs.current }}"
+          case "${{ steps.decide.outputs.bump }}" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "$NEW_VERSION" > VERSION
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog section
+        run: |
+          set -euo pipefail
+          DATE=$(date +%Y-%m-%d)
+          NEW_TAG="v${{ steps.bump.outputs.new }}"
+
+          if [ -z "${{ steps.lasttag.outputs.last }}" ]; then
+            LOG=$(git log --pretty=format:"- %s")
+          else
+            LOG=$(git log ${{ steps.lasttag.outputs.last }}..HEAD --pretty=format:"- %s")
+          fi
+
+          {
+            echo ""
+            echo "## [$NEW_TAG] - $DATE"
+            echo ""
+            echo "$LOG"
+            echo ""
+            cat CHANGELOG.md
+          } > CHANGELOG.tmp
+
+          mv CHANGELOG.tmp CHANGELOG.md
+
+      - name: Commit version + changelog
+        run: |
+          set -euo pipefail
+          git config user.name "forgejo-actions"
+          git config user.email "actions@local"
+          git add VERSION CHANGELOG.md
+          git commit -m "chore: release v${{ steps.bump.outputs.new }}"
+          git push
+
+      - name: Create tag
+        run: |
+          set -euo pipefail
+          git tag "v${{ steps.bump.outputs.new }}"
+          git push origin "v${{ steps.bump.outputs.new }}"

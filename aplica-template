@@ -1,0 +1,61 @@
+BASE="$HOME/workspace/repos"
+TEMPLATE="$BASE/templates/repository"
+
+REQ=(
+  ".gitattributes"
+  ".gitignore"
+  ".prettierrc"
+  "README.md"
+  "VERSION"
+  "CHANGELOG.md"
+  ".forgejo/workflows/release.yml"
+)
+
+for f in "${REQ[@]}"; do
+  [ -f "$TEMPLATE/$f" ] || { echo "ERRO: falta $TEMPLATE/$f"; exit 1; }
+done
+
+for d in "$BASE"/*; do
+  [ -d "$d/.git" ] || continue
+  repo="$(basename "$d")"
+
+  # não aplicar ao próprio templates (para evitar loop)
+  [ "$repo" = "templates" ] && { echo "SKIP templates"; continue; }
+
+  cd "$d" || continue
+
+  # determinar branch principal
+  branch=""
+  git show-ref --quiet refs/heads/main   && branch="main"
+  git show-ref --quiet refs/heads/master && branch="${branch:-master}"
+  [ -z "$branch" ] && branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+
+  git checkout "$branch" >/dev/null 2>&1 || true
+
+  changed=0
+
+  # copiar ficheiros (sem substituir)
+  for f in "${REQ[@]}"; do
+    if [ ! -f "$f" ]; then
+      mkdir -p "$(dirname "$f")"
+      cp -n "$TEMPLATE/$f" "$f"
+      changed=1
+    fi
+  done
+
+  if [ "$changed" -eq 0 ]; then
+    echo "SKIP $repo (já tem tudo)"
+    continue
+  fi
+
+  echo "APLICAR $repo (branch: $branch)"
+
+  git add -A
+  git commit -m "chore: apply repository template (forgejo actions + standards)" || true
+
+  if git remote get-url origin >/dev/null 2>&1; then
+    git push -u origin "$branch" || echo "WARN $repo: push falhou"
+  else
+    echo "WARN $repo: sem origin (não fiz push)"
+  fi
+done
