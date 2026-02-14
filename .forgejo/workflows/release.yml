@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
 
 jobs:
   release:
@@ -25,7 +26,7 @@ jobs:
       - name: Read current version
         id: version
         run: |
-          CURRENT=$(cat VERSION)
+          CURRENT=$(head -n 1 VERSION)
           echo "current=$CURRENT" >> $GITHUB_OUTPUT
 
       - name: Decide bump (custom rules)
@@ -74,7 +75,19 @@ jobs:
             patch) PATCH=$((PATCH+1)) ;;
           esac
           NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          echo "$NEW_VERSION" > VERSION
+
+          # Mantém o teu formato VERSION (3 linhas): versão, privacidade, estado
+          PRIVACY=$(sed -n '2p' VERSION 2>/dev/null || true)
+          STATE=$(sed -n '3p' VERSION 2>/dev/null || true)
+          PRIVACY=${PRIVACY:-private}
+          STATE=${STATE:-active}
+
+          {
+            echo "$NEW_VERSION"
+            echo "$PRIVACY"
+            echo "$STATE"
+          } > VERSION
+
           echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Generate changelog section
