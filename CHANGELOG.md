@@ -1,3 +1,28 @@
+
+## [v3.0.2] - 2026-02-14
+
+- chore: apply repository template (forgejo actions + standards)
+- asd
+- asd
+- asd
+- Change state to active
+- Change state to active
+- Change state to archived
+- Change privacy to private
+- Change state to active
+- Change privacy to public
+- Change state to archived
+- Bump version to 3.0.1
+- Bump version to 3.0.0
+- Change privacy to private
+- Change privacy to public
+- Change state to active
+- Bump version to 2.1.1
+- Bump version to 2.1.0
+- Bump version to 2.0.0
+- Change privacy to private
+- Initial commit
+
 # Changelog
 
 Todas as alterações relevantes a este projeto serão documentadas aqui.
