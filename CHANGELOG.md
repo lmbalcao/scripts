@@ -1,3 +1,6 @@
+# Changelog
+
+All notable changes to this repository will be documented in this file.
 
 ## [v4.0.2] - 2026-03-05
 
@@ -48,6 +51,9 @@ O formato segue uma lógica simples baseada em SemVer.
 
 ## [Unreleased]
 
-### Added
-- Inicialização do sistema de versionamento automático
+## [v4.0.3] - 2026-03-19
+
+- chore: apply template baseline
+- .
+- Adicionar prepara_dhcp_em_todos_ct_de_todos_nodes
 
