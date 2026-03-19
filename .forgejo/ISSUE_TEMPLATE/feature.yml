@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose an improvement to the repository or its automation.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What is missing, painful, or unclear today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful improvement.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected impact
+      description: Explain how this improves maintenance, quality, or collaboration.
+    validations:
+      required: false
+  - type: textarea
+    id: risks
+    attributes:
+      label: Compatibility or migration risk
+    validations:
+      required: false
