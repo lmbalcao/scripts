@@ -1,0 +1,16 @@
+for NODE in $(pvecm nodes | awk '/^[[:space:]]*[0-9]+[[:space:]]/ {print $NF}'); do echo "==== $NODE ===="; ssh root@"$NODE" 'for CTID in $(pct list | awk '\''NR>1 && $2=="running"{print $1}'\''); do echo "==> CT $CTID"; pct exec "$CTID" -- sh -lc '\''command -v systemctl >/dev/null 2>&1 || exit 0; cat > /etc/network/interfaces << "EOF"
+auto lo
+iface lo inet loopback
+
+allow-hotplug eth0
+iface eth0 inet dhcp
+EOF
+mkdir -p /etc/systemd/system/networking.service.d
+cat > /etc/systemd/system/networking.service.d/override.conf << "EOF"
+[Service]
+TimeoutStartSec=2min
+EOF
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl restart networking
+reboot'\''; done'; done
