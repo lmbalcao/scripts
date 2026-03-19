@@ -1,10 +1,9 @@
-name: Auto Release (Custom SemVer)
+name: Auto Release
 
-on:
+"on":
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
+  workflow_dispatch: {}
 
 jobs:
   release:
@@ -16,104 +15,112 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Guard against release-loop commits
+        id: guard
+        run: |
+          set -euo pipefail
+          SUBJECT=$(git log -1 --pretty=%s)
+          if echo "$SUBJECT" | grep -qiE '^chore: release v[0-9]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate repository baseline
+        if: steps.guard.outputs.skip != 'true'
+        run: bash scripts/validate-repo.sh
+
       - name: Get last tag
+        if: steps.guard.outputs.skip != 'true'
         id: lasttag
         run: |
+          set -euo pipefail
           git fetch --tags
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          echo "last=$LAST_TAG" >> $GITHUB_OUTPUT
+          echo "last=$LAST_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Read current version
+        if: steps.guard.outputs.skip != 'true'
         id: version
         run: |
+          set -euo pipefail
           CURRENT=$(head -n 1 VERSION)
-          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
 
-      - name: Decide bump (custom rules)
+      - name: Decide bump
+        if: steps.guard.outputs.skip != 'true'
         id: decide
         run: |
           set -euo pipefail
 
           if [ -z "${{ steps.lasttag.outputs.last }}" ]; then
             RANGE="HEAD"
+            COUNT=$(git rev-list --count HEAD)
           else
             RANGE="${{ steps.lasttag.outputs.last }}..HEAD"
+            COUNT=$(git rev-list --count "$RANGE")
+          fi
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "bump=none" >> "$GITHUB_OUTPUT"
+            echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           LOG_FULL=$(git log $RANGE --pretty=format:%B)
           LOG_SUBJ=$(git log $RANGE --pretty=format:%s)
-
           BUMP="patch"
 
-          # --- MAJOR ---
           if echo "$LOG_FULL" | grep -qiE 'BREAKING CHANGE'; then
             BUMP="major"
-          elif echo "$LOG_SUBJ" | grep -qiE '^(feat|fix)!:'; then
+          elif echo "$LOG_SUBJ" | grep -qiE '^[a-z0-9_-]+!:'; then
             BUMP="major"
-          elif echo "$LOG_SUBJ" | grep -qiE '^update:'; then
-            BUMP="major"
-
-          # --- MINOR ---
           elif echo "$LOG_SUBJ" | grep -qiE '^feat:'; then
             BUMP="minor"
-
-          # --- PATCH ---
           elif echo "$LOG_SUBJ" | grep -qiE '^fix:'; then
             BUMP="patch"
           fi
 
-          echo "bump=$BUMP" >> $GITHUB_OUTPUT
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
 
       - name: Bump version
+        if: steps.guard.outputs.skip != 'true' && steps.decide.outputs.bump != 'none'
         id: bump
         run: |
           set -euo pipefail
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${{ steps.version.outputs.current }}"
-          case "${{ steps.decide.outputs.bump }}" in
-            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
-            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
-            patch) PATCH=$((PATCH+1)) ;;
-          esac
-          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          version_path = Path('VERSION')
+          lines = version_path.read_text(encoding='utf-8').splitlines()
+          if not lines:
+              raise SystemExit('VERSION is empty')
+          major, minor, patch = map(int, lines[0].strip().split('.'))
+          bump = "${{ steps.decide.outputs.bump }}"
+          if bump == 'major':
+              major += 1; minor = 0; patch = 0
+          elif bump == 'minor':
+              minor += 1; patch = 0
+          else:
+              patch += 1
+          lines[0] = f"{major}.{minor}.{patch}"
+          version_path.write_text("\n".join(lines) + "\n", encoding='utf-8')
+          print(lines[0])
+          PYCODE
+          NEW_VERSION=$(head -n 1 VERSION)
+          echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-          # Mantém o teu formato VERSION (3 linhas): versão, privacidade, estado
-          PRIVACY=$(sed -n '2p' VERSION 2>/dev/null || true)
-          STATE=$(sed -n '3p' VERSION 2>/dev/null || true)
-          PRIVACY=${PRIVACY:-private}
-          STATE=${STATE:-active}
-
-          {
-            echo "$NEW_VERSION"
-            echo "$PRIVACY"
-            echo "$STATE"
-          } > VERSION
-
-          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Generate changelog section
+      - name: Update changelog
+        if: steps.guard.outputs.skip != 'true' && steps.decide.outputs.bump != 'none'
         run: |
           set -euo pipefail
           DATE=$(date +%Y-%m-%d)
-          NEW_TAG="v${{ steps.bump.outputs.new }}"
-
-          if [ -z "${{ steps.lasttag.outputs.last }}" ]; then
-            LOG=$(git log --pretty=format:"- %s")
-          else
-            LOG=$(git log ${{ steps.lasttag.outputs.last }}..HEAD --pretty=format:"- %s")
-          fi
-
-          {
-            echo ""
-            echo "## [$NEW_TAG] - $DATE"
-            echo ""
-            echo "$LOG"
-            echo ""
-            cat CHANGELOG.md
-          } > CHANGELOG.tmp
-
-          mv CHANGELOG.tmp CHANGELOG.md
+          LOG_FILE=$(mktemp)
+          git log ${{ steps.decide.outputs.range }} --pretty=format:'- %s' > "$LOG_FILE"
+          python3 scripts/update-changelog.py                 --version "${{ steps.bump.outputs.new }}"                 --date "$DATE"                 --log-file "$LOG_FILE"
 
       - name: Commit version + changelog
+        if: steps.guard.outputs.skip != 'true' && steps.decide.outputs.bump != 'none'
         run: |
           set -euo pipefail
           git config user.name "forgejo-actions"
@@ -123,6 +130,7 @@ jobs:
           git push
 
       - name: Create tag
+        if: steps.guard.outputs.skip != 'true' && steps.decide.outputs.bump != 'none'
         run: |
           set -euo pipefail
           git tag "v${{ steps.bump.outputs.new }}"

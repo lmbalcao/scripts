@@ -1,0 +1,22 @@
+name: Validate Repository
+
+"on":
+  push:
+    branches: [main, master]
+  pull_request: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: docker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate repository baseline
+        run: bash scripts/validate-repo.sh
