@@ -127,7 +127,7 @@ main() {
   net0="$(build_net0 "$bridge")"
   pass="$(gen_password)"
 
-  compose="${GIT_URL}/${GIT_USER}/${GIT_REPO}/raw/branch/${GIT_BRANCH}/terraform/docker-compose.yml"
+  compose="${GIT_URL}/${GIT_USER}/docker/raw/branch/${GIT_BRANCH}/terraform/docker-compose.yml"
 
   log_info "Criar CT ${vmid}"
 
