@@ -51,7 +51,9 @@ O formato segue uma lógica simples baseada em SemVer.
 
 ## [Unreleased]
 
-## [v4.0.6] - 2026-03-26
+## [v4.0.7] - 2026-03-26
 
+- Alteração de settings CT
+- chore: release v4.0.6
 - +scripts
 
