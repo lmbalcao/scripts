@@ -51,9 +51,7 @@ O formato segue uma lógica simples baseada em SemVer.
 
 ## [Unreleased]
 
-## [v4.0.3] - 2026-03-19
+## [v4.0.4] - 2026-03-26
 
-- chore: apply template baseline
-- .
-- Adicionar prepara_dhcp_em_todos_ct_de_todos_nodes
+- Add dev-install.sh
 
