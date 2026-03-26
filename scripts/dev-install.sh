@@ -12,7 +12,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die() { log_error "$*"; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Falta o comando: $1"; }
 
-GIT_URL="${GIT_URL:-https://forgejo.lbtec.org}"
+GIT_URL="${GIT_URL:-https://github.com}"
 GIT_USER="${GIT_USER:-lmbalcao}"
 GIT_REPO="${GIT_REPO:-docker}"
 GIT_BRANCH="${GIT_BRANCH:-master}"
