@@ -92,7 +92,7 @@ next_vmid() {
 }
 
 gen_password() {
-  tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24
+  openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24
 }
 
 build_net0() {
