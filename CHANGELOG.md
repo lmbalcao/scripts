@@ -51,7 +51,7 @@ O formato segue uma lógica simples baseada em SemVer.
 
 ## [Unreleased]
 
-## [v4.0.9] - 2026-03-26
+## [v4.0.10] - 2026-03-26
 
-- bugs
+- bug VLAN number
 
