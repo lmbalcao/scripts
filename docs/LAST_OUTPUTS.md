@@ -2,3 +2,5 @@
 
 - Não há outputs persistentes documentados em Git.
 - Saídas operacionais e relatórios locais devem permanecer fora do versionamento.
+- 2026-03-28: `bash -n scripts/dev-install.sh tests/dev-install.test.sh` -> sucesso.
+- 2026-03-28: `bash tests/dev-install.test.sh` -> `dev-install test passed`.

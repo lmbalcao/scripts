@@ -19,12 +19,12 @@ GIT_BRANCH="${GIT_BRANCH:-master}"
 
 HOSTNAME_CT="${HOSTNAME_CT:-dev-terraform}"
 
-# FIX CRÍTICO: sem VLAN por defeito
 TERRAFORM_VLAN="${VLAN:-${TERRAFORM_VLAN:-35}}"
 
 TERRAFORM_IP="${TERRAFORM_IP:-192.168.35.100/24}"
 TERRAFORM_GATEWAY="${TERRAFORM_GATEWAY:-192.168.35.1}"
-TERRAFORM_NAMESERVER="${TERRAFORM_NAMESERVER:-192.168.35.1}"
+TERRAFORM_NAMESERVER="${DNS_SERVER:-${TERRAFORM_NAMESERVER:-192.168.35.1}}"
+TERRAFORM_SEARCHDOMAIN="${DNS_DOMAIN:-${TERRAFORM_SEARCHDOMAIN:-}}"
 TERRAFORM_VMID="${TERRAFORM_VMID:-}"
 
 TERRAFORM_CORES="${STACK_CORES:-${TERRAFORM_CORES:-4}}"
@@ -38,7 +38,7 @@ PROXMOX_STORAGE="${PROXMOX_STORAGE:-}"
 PROXMOX_STORAGE_TEMPLATES="${PROXMOX_STORAGE_TEMPLATES:-}"
 PROXMOX_TEMPLATE="${PROXMOX_TEMPLATE:-}"
 
-[[ "${EUID}" -eq 0 ]] || die "Executa como root."
+[[ "${EUID}" -eq 0 || "${DEV_INSTALL_SKIP_ROOT_CHECK:-0}" == "1" ]] || die "Executa como root."
 
 for cmd in pct pvesh pvesm pveam awk sed grep ip head tr qm hostname; do
   need_cmd "$cmd"
@@ -97,12 +97,20 @@ gen_password() {
 
 build_net0() {
   local bridge="$1"
+  local net0=""
 
   if [[ -z "${TERRAFORM_IP}" ]]; then
-    echo "name=eth0,bridge=${bridge},ip=dhcp"
+    net0="name=eth0,bridge=${bridge},ip=dhcp"
   else
-    echo "name=eth0,bridge=${bridge},ip=${TERRAFORM_IP},gw=${TERRAFORM_GATEWAY}"
+    net0="name=eth0,bridge=${bridge},ip=${TERRAFORM_IP},gw=${TERRAFORM_GATEWAY}"
   fi
+
+  if [[ -n "${TERRAFORM_VLAN}" ]]; then
+    [[ "${TERRAFORM_VLAN}" =~ ^[0-9]+$ ]] || die "VLAN invalida: ${TERRAFORM_VLAN}"
+    net0="${net0},tag=${TERRAFORM_VLAN}"
+  fi
+
+  echo "${net0}"
 }
 
 get_ct_ip() {
@@ -138,9 +146,14 @@ main() {
     --swap "$TERRAFORM_SWAP" \
     --rootfs "${storage_root}:${TERRAFORM_DISK_GB}" \
     --net0 "$net0" \
+    --nameserver "$TERRAFORM_NAMESERVER" \
     --unprivileged 1 \
     --features nesting=1 \
     --password "$pass"
+
+  if [[ -n "${TERRAFORM_SEARCHDOMAIN}" ]]; then
+    pct set "$vmid" --searchdomain "$TERRAFORM_SEARCHDOMAIN"
+  fi
 
   pct start "$vmid"
   sleep 5
