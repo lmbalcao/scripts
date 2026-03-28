@@ -115,3 +115,30 @@ terraform/output/
 !.codex/artifacts/.gitkeep
 .codex/cache/*
 !.codex/cache/.gitkeep
+
+# ==================================================
+# Structural hygiene baseline
+# ==================================================
+.claude/cache/
+.claude/artifacts/
+.claude/tmp/
+.claude/debug/
+.claude/file-history/
+.claude/backups/
+.claude/worktrees/
+.codex/cache/
+.codex/artifacts/
+.codex/tmp/
+.codex/logs/
+.codex/runtime/
+.codex/worktrees/
+tmp/
+temp/
+scratch/
+debug/
+staging/
+*.log
+latest-*.md
+*-final.md
+*-v2.md
+*-copy.md
