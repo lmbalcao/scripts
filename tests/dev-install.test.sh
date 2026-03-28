@@ -112,5 +112,6 @@ OUTPUT="$(env \
 grep -q 'CT_VMID=1234' <<< "${OUTPUT}"
 grep -q 'create 1234 .*--net0 name=eth0,bridge=vmbr0,ip=192.168.35.100/24,gw=192.168.35.1,tag=77 .*--nameserver 192.168.35.53' "${TMP_DIR}/pct.log"
 grep -q 'set 1234 --searchdomain lab.internal' "${TMP_DIR}/pct.log"
+grep -q 'https://raw.githubusercontent.com/lmbalcao/docker/master/terraform/docker-compose.yml' "${TMP_DIR}/pct.log"
 
 echo "dev-install test passed"

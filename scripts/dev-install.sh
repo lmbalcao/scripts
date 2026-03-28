@@ -117,6 +117,20 @@ get_ct_ip() {
   pct exec "$1" -- hostname -I 2>/dev/null | awk '{print $1}' || true
 }
 
+build_raw_url() {
+  local path="$1"
+  local base="${GIT_URL%/}"
+
+  case "$base" in
+    https://github.com|http://github.com|https://www.github.com|http://www.github.com)
+      echo "https://raw.githubusercontent.com/${GIT_USER}/${GIT_REPO}/${GIT_BRANCH}/${path}"
+      ;;
+    *)
+      echo "${base}/${GIT_USER}/${GIT_REPO}/raw/branch/${GIT_BRANCH}/${path}"
+      ;;
+  esac
+}
+
 main() {
   local node bridge storage_root storage_tpl template vmid net0 pass ip compose
 
@@ -135,7 +149,7 @@ main() {
   net0="$(build_net0 "$bridge")"
   pass="$(gen_password)"
 
-  compose="${GIT_URL}/${GIT_USER}/docker/raw/branch/${GIT_BRANCH}/terraform/docker-compose.yml"
+  compose="$(build_raw_url "terraform/docker-compose.yml")"
 
   log_info "Criar CT ${vmid}"
 
