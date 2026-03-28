@@ -51,7 +51,7 @@ O formato segue uma lógica simples baseada em SemVer.
 
 ## [Unreleased]
 
-## [v4.0.14] - 2026-03-26
+## [v4.0.15] - 2026-03-28
 
-- force
+- chore: normalize repository hygiene
 
