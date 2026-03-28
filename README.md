@@ -55,19 +55,26 @@ cd scripts
 ### 2) Tornar scripts executaveis quando necessario
 
 ```bash
-chmod +x push push-all.sh aplica-template
+chmod +x scripts/push scripts/push-all.sh scripts/aplica-template
 ```
 
 ---
 
 ## Configuracao
 
-Variaveis comuns:
+Variaveis usadas pelos scripts versionados:
 
-* `WORKSPACE_DIR`
+* `WORKSPACE_DIR` (`forgejo-sync.sh`, `forgejo-prune-remote.sh`)
+* `FORGEJO_HOST` (`forgejo-sync.sh`, `forgejo-prune-remote.sh`, `push`)
+* `BASE_DIR` (`push-all.sh`)
+* `REMOTE` (`push-all.sh`)
 * `FORGEJO_HOST`
 * `DRY_RUN`
-* `REMOTE`
+* `SKIP_DIRTY`
+* `SKIP_MIRROR`
+* `FORGEJO_OWNER`
+* `GITHUB_OWNER`
+* `MIRROR_DIR`
 
 ---
 
@@ -80,6 +87,14 @@ Variaveis comuns:
 | `push-all.sh` | Push em lote para repos locais |
 | `push` | Mirror/push entre plataformas |
 | `aplica-template` | Automatiza aplicacao de template local |
+
+Executar a partir da raiz do repo:
+
+```bash
+bash scripts/forgejo-sync.sh
+bash scripts/forgejo-prune-remote.sh
+bash scripts/push-all.sh
+```
 
 ---
 
