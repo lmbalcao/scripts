@@ -173,15 +173,14 @@ main() {
   sleep 5
 
   pct exec "$vmid" -- bash -lc "
-    apt-get update
-    apt-get install -y curl docker.io docker-compose
-    mkdir -p /opt/terraform
-    curl -fL ${compose} -o /opt/terraform/docker-compose.yml
-  "
-
+  apt-get update
+  apt-get install -y curl git docker.io docker-compose
   mkdir -p /opt
+  curl -fL '${compose}' -o /tmp/docker-compose.yml
+  rm -rf /opt/terraform
   git clone https://github.com/lmbalcao/terraform /opt/terraform
-
+  mv /tmp/docker-compose.yml /opt/terraform/docker-compose.yml
+"
 
 
 
