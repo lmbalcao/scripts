@@ -179,6 +179,12 @@ main() {
     curl -fL ${compose} -o /opt/terraform/docker-compose.yml
   "
 
+  mkdir -p /opt
+  git clone https://github.com/lmbalcao/terraform /opt/terraform
+
+
+
+
   ip="$(get_ct_ip "$vmid")"
 
   echo "======================================"
