@@ -178,7 +178,7 @@ main() {
   mkdir -p /opt
   curl -fL '${compose}' -o /tmp/docker-compose.yml
   rm -rf /opt/terraform
-  git clone https://github.com/lmbalcao/terraform /opt/terraform
+  git clone https://github.com/lmbalcao/terraform /opt/terraform/workspace
   mv /tmp/docker-compose.yml /opt/terraform/docker-compose.yml
 "
 
