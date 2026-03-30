@@ -272,9 +272,6 @@ COMMON_EOF
 
   # ── Step 8: Start containers ──────────────────────────────────────────────
 
-  log_info "Criar network terraform-net..."
-  ct_exec "docker network create terraform-net 2>/dev/null || true"
-
   log_info "Build + arrancar containers terraform (pode demorar alguns minutos)..."
   ct_exec "cd /opt/terraform && docker compose build --pull"
   ct_exec "cd /opt/terraform && docker compose up -d"
