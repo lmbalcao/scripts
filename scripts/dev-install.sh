@@ -269,24 +269,19 @@ ensure_proxmox_terraform_token() {
   pveum aclmod / --user "${_PVE_TF_USER}" --role "${_PVE_TF_ROLE}" 2>/dev/null || true
   log_info "ACL configurada: / → ${_PVE_TF_USER}:${_PVE_TF_ROLE}"
 
+  # Remove token existente para garantir que obtemos o secret
+  pveum user token remove "${_PVE_TF_USER}" "${_PVE_TF_TOKEN_NAME}" 2>/dev/null \
+    && log_info "Token '${_PVE_TF_TOKEN_NAME}' anterior removido." \
+    || true
+
   local token_json
-  if token_json="$(pveum user token add "${_PVE_TF_USER}" "${_PVE_TF_TOKEN_NAME}" \
-        --expire 0 --privsep 0 --output-format json 2>/dev/null)"; then
-    PROXMOX_API_TOKEN="$(printf '%s' "${token_json}" \
-      | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")"
-    PROXMOX_API_TOKEN_ID="${_PVE_TF_USER}!${_PVE_TF_TOKEN_NAME}"
-    log_info "Token API ${PROXMOX_API_TOKEN_ID} criado."
-  else
-    if [[ -n "${PROXMOX_API_TOKEN_ID}" && -n "${PROXMOX_API_TOKEN}" ]]; then
-      log_info "Token já existe; a usar PROXMOX_API_TOKEN_ID/TOKEN fornecidos."
-    else
-      log_warn "Token '${_PVE_TF_TOKEN_NAME}' já existe para ${_PVE_TF_USER} e o secret não é recuperável."
-      log_warn "Para recriar:"
-      log_warn "  pveum user token remove ${_PVE_TF_USER} ${_PVE_TF_TOKEN_NAME}"
-      log_warn "  pveum user token add ${_PVE_TF_USER} ${_PVE_TF_TOKEN_NAME} --expire 0 --privsep 0"
-      die "Define PROXMOX_API_TOKEN_ID e PROXMOX_API_TOKEN manualmente e volta a correr."
-    fi
-  fi
+  token_json="$(pveum user token add "${_PVE_TF_USER}" "${_PVE_TF_TOKEN_NAME}" \
+      --expire 0 --privsep 0 --output-format json)" \
+    || die "Falha ao criar token API para ${_PVE_TF_USER}."
+  PROXMOX_API_TOKEN="$(printf '%s' "${token_json}" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")"
+  PROXMOX_API_TOKEN_ID="${_PVE_TF_USER}!${_PVE_TF_TOKEN_NAME}"
+  log_info "Token API ${PROXMOX_API_TOKEN_ID} criado."
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
