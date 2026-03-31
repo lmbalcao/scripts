@@ -6,9 +6,9 @@
 #   export GIT_URL=https://forgejo.lbtec.org
 #   export GIT_USER=lmbalcao
 #   export GIT_PASSWORD=<token>              # opcional, para repos privados
-#   export PROXMOX_API_URL=https://proxmox.local:8006/api2/json
-#   export PROXMOX_API_TOKEN_ID=terraform@pve!token
-#   export PROXMOX_API_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+#   export PROXMOX_API_URL=https://proxmox.local:8006/api2/json   # opcional, auto-descoberto
+#   export PROXMOX_API_TOKEN_ID=terraform@pve!terraform           # opcional, criado automaticamente
+#   export PROXMOX_API_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx # opcional, criado automaticamente
 #   bash dev-install.sh
 #
 set -euo pipefail
@@ -57,7 +57,8 @@ PROXMOX_STORAGE="${PROXMOX_STORAGE:-}"
 PROXMOX_STORAGE_TEMPLATES="${PROXMOX_STORAGE_TEMPLATES:-}"
 PROXMOX_TEMPLATE="${PROXMOX_TEMPLATE:-}"
 
-# ── Terraform credentials (required) ─────────────────────────────────────────
+# ── Terraform credentials ─────────────────────────────────────────────────────
+# If not provided, the script creates terraform@pve user + token automatically.
 
 PROXMOX_API_URL="${PROXMOX_API_URL:-}"
 PROXMOX_API_TOKEN_ID="${PROXMOX_API_TOKEN_ID:-}"
@@ -65,11 +66,18 @@ PROXMOX_API_TOKEN="${PROXMOX_API_TOKEN:-}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 
+# ── Proxmox terraform user constants ─────────────────────────────────────────
+
+_PVE_TF_USER="terraform@pve"
+_PVE_TF_ROLE="TerraformRole"
+_PVE_TF_TOKEN_NAME="terraform"
+_PVE_TF_PRIVS="Datastore.AllocateSpace,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Migrate,VM.PowerMgmt"
+
 # ── Pre-flight ────────────────────────────────────────────────────────────────
 
 [[ "${EUID}" -eq 0 || "${DEV_INSTALL_SKIP_ROOT_CHECK:-0}" == "1" ]] || die "Executa como root."
 
-for cmd in pct pvesh pvesm pveam awk sed grep ip head tr hostname; do
+for cmd in pct pvesh pvesm pveam pveum python3 awk sed grep ip head tr hostname; do
   need_cmd "$cmd"
 done
 
@@ -85,17 +93,91 @@ discover_bridge() {
   echo "vmbr0"
 }
 
-storage_exists() { pvesm status --storage "$1" >/dev/null 2>&1; }
+# List storages on <node> that support <content_type> (rootdir | vztmpl | images …)
+node_storages_with_content() {
+  local node="$1" content_type="$2"
+  pvesh get "/nodes/${node}/storage" --output-format json 2>/dev/null \
+    | python3 -c "
+import json, sys
+ct = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for s in data:
+    if ct in s.get('content', '').split(',') and s.get('active', 0):
+        print(s['storage'])
+" "${content_type}"
+}
+
+# Validate that a manually specified storage supports <content_type> on <node>
+_validate_storage_content() {
+  local node="$1" storage="$2" content_type="$3"
+  local result
+  result="$(pvesh get "/nodes/${node}/storage" --output-format json 2>/dev/null \
+    | python3 -c "
+import json, sys
+storage = sys.argv[1]
+ct = sys.argv[2]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print('parse_error')
+    sys.exit(0)
+for s in data:
+    if s.get('storage') == storage:
+        if not s.get('active', 0):
+            print('not_active')
+        elif ct not in s.get('content', '').split(','):
+            print('wrong_content')
+        else:
+            print('ok')
+        sys.exit(0)
+print('not_found')
+" "${storage}" "${content_type}")"
+  case "${result}" in
+    ok)            return 0 ;;
+    not_active)    die "Storage '${storage}' não está activo no node '${node}'." ;;
+    wrong_content) die "Storage '${storage}' não suporta '${content_type}' no node '${node}'." ;;
+    not_found)     die "Storage '${storage}' não encontrado no node '${node}'." ;;
+    *)             die "Erro ao verificar storage '${storage}' no node '${node}'." ;;
+  esac
+}
 
 discover_storage_rootfs() {
-  [[ -n "${PROXMOX_STORAGE}" ]] && { echo "${PROXMOX_STORAGE}"; return; }
-  storage_exists "local-lvm" && { echo "local-lvm"; return; }
-  echo "local"
+  local node="$1"
+  if [[ -n "${PROXMOX_STORAGE}" ]]; then
+    _validate_storage_content "${node}" "${PROXMOX_STORAGE}" "rootdir"
+    echo "${PROXMOX_STORAGE}"
+    return
+  fi
+  local candidates
+  candidates="$(node_storages_with_content "${node}" "rootdir")"
+  [[ -z "${candidates}" ]] && die "Nenhum storage com suporte a 'rootdir' encontrado no node '${node}'."
+  for preferred in "local-lvm" "local"; do
+    if echo "${candidates}" | grep -qx "${preferred}"; then
+      echo "${preferred}"; return
+    fi
+  done
+  echo "${candidates}" | head -1
 }
 
 discover_storage_templates() {
-  [[ -n "${PROXMOX_STORAGE_TEMPLATES}" ]] && { echo "${PROXMOX_STORAGE_TEMPLATES}"; return; }
-  echo "local"
+  local node="$1"
+  if [[ -n "${PROXMOX_STORAGE_TEMPLATES}" ]]; then
+    _validate_storage_content "${node}" "${PROXMOX_STORAGE_TEMPLATES}" "vztmpl"
+    echo "${PROXMOX_STORAGE_TEMPLATES}"
+    return
+  fi
+  local candidates
+  candidates="$(node_storages_with_content "${node}" "vztmpl")"
+  [[ -z "${candidates}" ]] && die "Nenhum storage com suporte a 'vztmpl' encontrado no node '${node}'."
+  for preferred in "local" "local-lvm"; do
+    if echo "${candidates}" | grep -qx "${preferred}"; then
+      echo "${preferred}"; return
+    fi
+  done
+  echo "${candidates}" | head -1
 }
 
 discover_template() {
@@ -153,6 +235,60 @@ ct_exec() {
   pct exec "$VMID" -- bash -c "$1"
 }
 
+# ── Proxmox token creation ────────────────────────────────────────────────────
+# Creates terraform@pve user, TerraformRole, and API token if credentials are
+# not already provided via environment variables.
+# Sets PROXMOX_API_URL, PROXMOX_API_TOKEN_ID, PROXMOX_API_TOKEN on success.
+
+ensure_proxmox_terraform_token() {
+  if [[ -n "${PROXMOX_API_URL}" && -n "${PROXMOX_API_TOKEN_ID}" && -n "${PROXMOX_API_TOKEN}" ]]; then
+    log_info "Credenciais Proxmox já definidas."
+    return
+  fi
+
+  if [[ -z "${PROXMOX_API_URL}" ]]; then
+    local node_ip
+    node_ip="$(hostname -I | awk '{print $1}')"
+    PROXMOX_API_URL="https://${node_ip}:8006/api2/json"
+    log_info "PROXMOX_API_URL auto-descoberto: ${PROXMOX_API_URL}"
+  fi
+
+  log_info "A criar utilizador Terraform no Proxmox (${_PVE_TF_USER})..."
+
+  pveum user add "${_PVE_TF_USER}" --comment "Terraform GUI" 2>/dev/null \
+    && log_info "Utilizador ${_PVE_TF_USER} criado." \
+    || log_info "Utilizador ${_PVE_TF_USER} já existe."
+
+  if pveum role add "${_PVE_TF_ROLE}" --privs "${_PVE_TF_PRIVS}" 2>/dev/null; then
+    log_info "Role ${_PVE_TF_ROLE} criada."
+  else
+    pveum role modify "${_PVE_TF_ROLE}" --privs "${_PVE_TF_PRIVS}" 2>/dev/null || true
+    log_info "Role ${_PVE_TF_ROLE} já existe (privileges actualizados)."
+  fi
+
+  pveum aclmod / --user "${_PVE_TF_USER}" --role "${_PVE_TF_ROLE}" 2>/dev/null || true
+  log_info "ACL configurada: / → ${_PVE_TF_USER}:${_PVE_TF_ROLE}"
+
+  local token_json
+  if token_json="$(pveum user token add "${_PVE_TF_USER}" "${_PVE_TF_TOKEN_NAME}" \
+        --expire 0 --privsep 0 --output-format json 2>/dev/null)"; then
+    PROXMOX_API_TOKEN="$(printf '%s' "${token_json}" \
+      | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")"
+    PROXMOX_API_TOKEN_ID="${_PVE_TF_USER}!${_PVE_TF_TOKEN_NAME}"
+    log_info "Token API ${PROXMOX_API_TOKEN_ID} criado."
+  else
+    if [[ -n "${PROXMOX_API_TOKEN_ID}" && -n "${PROXMOX_API_TOKEN}" ]]; then
+      log_info "Token já existe; a usar PROXMOX_API_TOKEN_ID/TOKEN fornecidos."
+    else
+      log_warn "Token '${_PVE_TF_TOKEN_NAME}' já existe para ${_PVE_TF_USER} e o secret não é recuperável."
+      log_warn "Para recriar:"
+      log_warn "  pveum user token remove ${_PVE_TF_USER} ${_PVE_TF_TOKEN_NAME}"
+      log_warn "  pveum user token add ${_PVE_TF_USER} ${_PVE_TF_TOKEN_NAME} --expire 0 --privsep 0"
+      die "Define PROXMOX_API_TOKEN_ID e PROXMOX_API_TOKEN manualmente e volta a correr."
+    fi
+  fi
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
@@ -160,8 +296,8 @@ main() {
 
   node="$(discover_node)"
   bridge="$(discover_bridge)"
-  storage_root="$(discover_storage_rootfs)"
-  storage_tpl="$(discover_storage_templates)"
+  storage_root="$(discover_storage_rootfs "${node}")"
+  storage_tpl="$(discover_storage_templates "${node}")"
   template="$(discover_template)"
 
   [[ -n "$template" ]] || die "Nenhum template Debian 12 encontrado. Descarrega primeiro com pveam."
@@ -178,7 +314,11 @@ main() {
     log_warn "ROOT_PASSWORD não definido — gerado automaticamente: ${ROOT_PASSWORD}"
   fi
 
-  # ── Step 1: Create CT ──────────────────────────────────────────────────────
+  # ── Step 1: Proxmox token ──────────────────────────────────────────────────
+
+  ensure_proxmox_terraform_token
+
+  # ── Step 2: Create CT ──────────────────────────────────────────────────────
 
   log_info "Criar CT ${VMID} (${HOSTNAME_CT})..."
   pct create "$VMID" "${storage_tpl}:vztmpl/${template}" \
@@ -199,12 +339,12 @@ main() {
   log_info "Aguardar boot..."
   sleep 8
 
-  # ── Step 2: System packages ────────────────────────────────────────────────
+  # ── Step 3: System packages ────────────────────────────────────────────────
 
   log_info "Instalar pacotes de sistema..."
   ct_exec "apt-get update -qq && apt-get install -y -qq ca-certificates curl gnupg lsb-release git"
 
-  # ── Step 3: Docker ────────────────────────────────────────────────────────
+  # ── Step 4: Docker ────────────────────────────────────────────────────────
 
   log_info "Instalar Docker..."
   ct_exec "install -m 0755 -d /etc/apt/keyrings"
@@ -214,7 +354,7 @@ main() {
   ct_exec "apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin"
   ct_exec "systemctl enable docker && systemctl start docker"
 
-  # ── Step 4: Directories ───────────────────────────────────────────────────
+  # ── Step 5: Directories ───────────────────────────────────────────────────
 
   log_info "Criar directorias..."
   ct_exec "mkdir -p /opt/terraform/data /opt/terraform/plugin-cache /opt/terraform/config"
@@ -225,7 +365,7 @@ main() {
   # Minimal .terraformrc — prevents "Unable to open CLI configuration file" warning
   ct_exec "touch /opt/terraform/config/.terraformrc"
 
-  # ── Step 5: Clone repos ───────────────────────────────────────────────────
+  # ── Step 6: Clone repos ───────────────────────────────────────────────────
 
   local tf_url docker_url gui_url
   tf_url="$(inject_git_credentials "$GIT_TERRAFORM_REPO")"
@@ -241,7 +381,7 @@ main() {
   log_info "Clonar repo terraform-gui → /opt/terraform-gui/workspace ..."
   ct_exec "git clone '${gui_url}' /opt/terraform-gui/workspace"
 
-  # ── Step 6: Deploy docker configs ────────────────────────────────────────
+  # ── Step 7: Deploy docker configs ────────────────────────────────────────
 
   log_info "Copiar ficheiros docker..."
   ct_exec "cp /tmp/docker-repo/terraform/docker-compose.yml /opt/terraform/docker-compose.yml"
@@ -250,7 +390,7 @@ main() {
   ct_exec "cp /tmp/docker-repo/terraform-gui/docker-compose.yml /opt/terraform-gui/docker-compose.yml"
   ct_exec "cp /opt/terraform-gui/workspace/nginx.conf /opt/terraform-gui/nginx.conf"
 
-  # ── Step 7: Credentials ───────────────────────────────────────────────────
+  # ── Step 8: Credentials ───────────────────────────────────────────────────
 
   log_info "Escrever credenciais Terraform..."
   ct_exec "mkdir -p /opt/terraform/workspace/env/${ENVIRONMENT}"
@@ -273,7 +413,7 @@ COMMON_EOF
     fi
   "
 
-  # ── Step 8: Start containers ──────────────────────────────────────────────
+  # ── Step 9: Start containers ──────────────────────────────────────────────
 
   log_info "Build + arrancar containers terraform (pode demorar alguns minutos)..."
   ct_exec "cd /opt/terraform && docker compose build --pull"
@@ -300,7 +440,7 @@ COMMON_EOF
   log_info "Arrancar terraform-gui..."
   ct_exec "cd /opt/terraform-gui && docker compose up -d"
 
-  # ── Step 9: Final check ───────────────────────────────────────────────────
+  # ── Step 10: Final check ──────────────────────────────────────────────────
 
   sleep 5
   local ip
