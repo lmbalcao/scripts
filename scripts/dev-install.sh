@@ -222,6 +222,9 @@ main() {
   ct_exec "mkdir -p /opt/data/logs"
   ct_exec "mkdir -p /mnt/data"
 
+  # Minimal .terraformrc — prevents "Unable to open CLI configuration file" warning
+  ct_exec "touch /opt/terraform/config/.terraformrc"
+
   # ── Step 5: Clone repos ───────────────────────────────────────────────────
 
   local tf_url docker_url gui_url
@@ -285,7 +288,13 @@ COMMON_EOF
   if ct_exec "curl -sf http://localhost:8765/api/health > /dev/null 2>&1"; then
     log_info "terraform-api OK."
   else
-    log_warn "terraform-api não respondeu em 60s. Verifica: docker compose -f /opt/terraform/docker-compose.yml logs"
+    log_warn "terraform-api não respondeu em 60s — logs:"
+    pct exec "$VMID" -- bash -c "
+      echo '--- container status ---'
+      docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep -E 'NAMES|terraform'
+      echo '--- terraform-api logs (last 30) ---'
+      docker logs terraform-api --tail 30 2>&1 || echo '(container nao existe)'
+    " || true
   fi
 
   log_info "Arrancar terraform-gui..."
@@ -313,11 +322,16 @@ COMMON_EOF
     echo "╠══════════════════════════════════════════════════════╣"
     printf "║  CT VMID: %-42s║\n" "${VMID}"
     printf "║  IP:      %-42s║\n" "${ip}"
-    echo "╠══════════════════════════════════════════════════════╣"
-    echo "║  Diagnóstico:                                        ║"
-    echo "║    pct exec <VMID> -- docker compose \\              ║"
-    echo "║      -f /opt/terraform/docker-compose.yml logs       ║"
     echo "╚══════════════════════════════════════════════════════╝"
+    echo ""
+    echo "--- container status ---"
+    pct exec "$VMID" -- bash -c "docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep -E 'NAMES|terraform'" || true
+    echo ""
+    echo "--- terraform-api logs ---"
+    pct exec "$VMID" -- bash -c "docker logs terraform-api --tail 40 2>&1 || echo '(container nao existe)'" || true
+    echo ""
+    echo "--- terraform-gui logs ---"
+    pct exec "$VMID" -- bash -c "docker logs terraform-gui --tail 10 2>&1 || echo '(container nao existe)'" || true
   fi
 }
 
