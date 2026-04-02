@@ -7,7 +7,7 @@
 #   export GIT_USER=lmbalcao
 #   export GIT_PASSWORD=<token>              # opcional, para repos privados
 #   export PROXMOX_API_URL=https://proxmox.local:8006/api2/json   # opcional, auto-descoberto
-#   export PROXMOX_API_TOKEN_ID=terraform@pve!terraform           # opcional, criado automaticamente
+#   export PROXMOX_API_TOKEN_ID=root@pam!terraform                 # opcional, criado automaticamente
 #   export PROXMOX_API_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx # opcional, criado automaticamente
 #   bash dev-install.sh
 #
@@ -58,7 +58,7 @@ PROXMOX_STORAGE_TEMPLATES="${PROXMOX_STORAGE_TEMPLATES:-}"
 PROXMOX_TEMPLATE="${PROXMOX_TEMPLATE:-}"
 
 # ── Terraform credentials ─────────────────────────────────────────────────────
-# If not provided, the script creates terraform@pve user + token automatically.
+# If not provided, the script creates a root@pam token automatically.
 
 PROXMOX_API_URL="${PROXMOX_API_URL:-}"
 PROXMOX_API_TOKEN_ID="${PROXMOX_API_TOKEN_ID:-}"
@@ -66,12 +66,12 @@ PROXMOX_API_TOKEN="${PROXMOX_API_TOKEN:-}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 
-# ── Proxmox terraform user constants ─────────────────────────────────────────
+# ── Proxmox token constants ───────────────────────────────────────────────────
+# root@pam is required for bind-mount operations in LXC containers.
+# The Proxmox API enforces that only root@pam can create bind-mount mountpoints.
 
-_PVE_TF_USER="terraform@pve"
-_PVE_TF_ROLE="TerraformRole"
+_PVE_TF_USER="root@pam"
 _PVE_TF_TOKEN_NAME="terraform"
-_PVE_TF_PRIVS="Datastore.AllocateSpace,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Migrate,VM.PowerMgmt"
 
 # ── Pre-flight ────────────────────────────────────────────────────────────────
 
@@ -236,8 +236,9 @@ ct_exec() {
 }
 
 # ── Proxmox token creation ────────────────────────────────────────────────────
-# Creates terraform@pve user, TerraformRole, and API token if credentials are
-# not already provided via environment variables.
+# Creates a root@pam API token for Terraform and terraform-gui.
+# root@pam is required because the Proxmox API only allows root@pam to create
+# bind-mount mountpoints in LXC containers.
 # Sets PROXMOX_API_URL, PROXMOX_API_TOKEN_ID, PROXMOX_API_TOKEN on success.
 
 ensure_proxmox_terraform_token() {
@@ -252,22 +253,6 @@ ensure_proxmox_terraform_token() {
     PROXMOX_API_URL="https://${node_ip}:8006/api2/json"
     log_info "PROXMOX_API_URL auto-descoberto: ${PROXMOX_API_URL}"
   fi
-
-  log_info "A criar utilizador Terraform no Proxmox (${_PVE_TF_USER})..."
-
-  pveum user add "${_PVE_TF_USER}" --comment "Terraform GUI" 2>/dev/null \
-    && log_info "Utilizador ${_PVE_TF_USER} criado." \
-    || log_info "Utilizador ${_PVE_TF_USER} já existe."
-
-  if pveum role add "${_PVE_TF_ROLE}" --privs "${_PVE_TF_PRIVS}" 2>/dev/null; then
-    log_info "Role ${_PVE_TF_ROLE} criada."
-  else
-    pveum role modify "${_PVE_TF_ROLE}" --privs "${_PVE_TF_PRIVS}" 2>/dev/null || true
-    log_info "Role ${_PVE_TF_ROLE} já existe (privileges actualizados)."
-  fi
-
-  pveum aclmod / --user "${_PVE_TF_USER}" --role "${_PVE_TF_ROLE}" 2>/dev/null || true
-  log_info "ACL configurada: / → ${_PVE_TF_USER}:${_PVE_TF_ROLE}"
 
   # Remove token existente para garantir que obtemos o secret
   pveum user token remove "${_PVE_TF_USER}" "${_PVE_TF_TOKEN_NAME}" 2>/dev/null \
