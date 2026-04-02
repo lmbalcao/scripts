@@ -370,6 +370,8 @@ main() {
   log_info "Gerar par de chaves SSH no CT..."
   ct_exec "mkdir -p /root/.ssh && chmod 700 /root/.ssh"
   ct_exec "[ -f /root/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519 -C 'terraform@${HOSTNAME_CT}'"
+  # Copiar chave para /opt/terraform/config — montado em /terraform/config dentro do Docker
+  ct_exec "cp /root/.ssh/id_ed25519 /opt/terraform/config/id_ed25519 && chmod 600 /opt/terraform/config/id_ed25519"
   CT_PUBKEY="$(pct exec "$VMID" -- cat /root/.ssh/id_ed25519.pub)"
   log_info "Chave pública: ${CT_PUBKEY}"
 
@@ -410,7 +412,7 @@ proxmox_api_url              = \"${PROXMOX_API_URL}\"
 proxmox_password             = \"${PROXMOX_ROOT_PASSWORD}\"
 proxmox_tls_insecure         = true
 root_password                = \"${ROOT_PASSWORD}\"
-proxmox_ssh_private_key_path = \"/root/.ssh/id_ed25519\"
+proxmox_ssh_private_key_path = \"/terraform/config/id_ed25519\"
 TFEOF"
 
   # common.tfvars (skip if already exists in repo)
