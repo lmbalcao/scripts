@@ -246,22 +246,28 @@ inject_ssh_key_to_nodes() {
   local pubkey="$1"
   local local_node
   local_node="$(hostname -s)"
-  local authorized_keys_cmd="mkdir -p /root/.ssh && chmod 700 /root/.ssh
-grep -qxF '${pubkey}' /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' '${pubkey}' >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys"
 
   while IFS= read -r node; do
     [[ -z "$node" ]] && continue
     log_info "Injectar chave SSH no node: ${node}"
     if [[ "$node" == "$local_node" ]]; then
-      mkdir -p /root/.ssh && chmod 700 /root/.ssh
+      mkdir -p /root/.ssh
+      chmod 700 /root/.ssh
       grep -qxF "$pubkey" /root/.ssh/authorized_keys 2>/dev/null \
         || printf '%s\n' "$pubkey" >> /root/.ssh/authorized_keys
       chmod 600 /root/.ssh/authorized_keys
     else
       ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-          "root@${node}" bash -c "$authorized_keys_cmd" \
+          "root@${node}" /bin/sh -s -- "$pubkey" <<'REMOTE' \
         || log_warn "Falhou injecção no node ${node} — verifica SSH cluster."
+set -eu
+pubkey="$1"
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+grep -qxF "$pubkey" /root/.ssh/authorized_keys 2>/dev/null \
+  || printf '%s\n' "$pubkey" >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+REMOTE
     fi
   done <<< "$(discover_cluster_nodes)"
 }
