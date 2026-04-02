@@ -7,8 +7,7 @@
 #   export GIT_USER=lmbalcao
 #   export GIT_PASSWORD=<token>              # opcional, para repos privados
 #   export PROXMOX_API_URL=https://proxmox.local:8006/api2/json   # opcional, auto-descoberto
-#   export PROXMOX_API_TOKEN_ID=root@pam!terraform                 # opcional, criado automaticamente
-#   export PROXMOX_API_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx # opcional, criado automaticamente
+#   export PROXMOX_ROOT_PASSWORD=<root@pam-password>              # obrigatório (ou introduzir quando pedido)
 #   bash dev-install.sh
 #
 set -euo pipefail
@@ -58,20 +57,13 @@ PROXMOX_STORAGE_TEMPLATES="${PROXMOX_STORAGE_TEMPLATES:-}"
 PROXMOX_TEMPLATE="${PROXMOX_TEMPLATE:-}"
 
 # ── Terraform credentials ─────────────────────────────────────────────────────
-# If not provided, the script creates a root@pam token automatically.
+# The provider authenticates as root@pam with password.
+# root@pam is required for bind-mount operations in LXC containers.
 
 PROXMOX_API_URL="${PROXMOX_API_URL:-}"
-PROXMOX_API_TOKEN_ID="${PROXMOX_API_TOKEN_ID:-}"
-PROXMOX_API_TOKEN="${PROXMOX_API_TOKEN:-}"
+PROXMOX_ROOT_PASSWORD="${PROXMOX_ROOT_PASSWORD:-}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
-
-# ── Proxmox token constants ───────────────────────────────────────────────────
-# root@pam is required for bind-mount operations in LXC containers.
-# The Proxmox API enforces that only root@pam can create bind-mount mountpoints.
-
-_PVE_TF_USER="root@pam"
-_PVE_TF_TOKEN_NAME="terraform"
 
 # ── Pre-flight ────────────────────────────────────────────────────────────────
 
@@ -235,18 +227,9 @@ ct_exec() {
   pct exec "$VMID" -- bash -c "$1"
 }
 
-# ── Proxmox token creation ────────────────────────────────────────────────────
-# Creates a root@pam API token for Terraform and terraform-gui.
-# root@pam is required because the Proxmox API only allows root@pam to create
-# bind-mount mountpoints in LXC containers.
-# Sets PROXMOX_API_URL, PROXMOX_API_TOKEN_ID, PROXMOX_API_TOKEN on success.
+# ── Proxmox credentials ───────────────────────────────────────────────────────
 
-ensure_proxmox_terraform_token() {
-  if [[ -n "${PROXMOX_API_URL}" && -n "${PROXMOX_API_TOKEN_ID}" && -n "${PROXMOX_API_TOKEN}" ]]; then
-    log_info "Credenciais Proxmox já definidas."
-    return
-  fi
-
+ensure_proxmox_credentials() {
   if [[ -z "${PROXMOX_API_URL}" ]]; then
     local node_ip
     node_ip="$(hostname -I | awk '{print $1}')"
@@ -254,19 +237,11 @@ ensure_proxmox_terraform_token() {
     log_info "PROXMOX_API_URL auto-descoberto: ${PROXMOX_API_URL}"
   fi
 
-  # Remove token existente para garantir que obtemos o secret
-  pveum user token remove "${_PVE_TF_USER}" "${_PVE_TF_TOKEN_NAME}" 2>/dev/null \
-    && log_info "Token '${_PVE_TF_TOKEN_NAME}' anterior removido." \
-    || true
-
-  local token_json
-  token_json="$(pveum user token add "${_PVE_TF_USER}" "${_PVE_TF_TOKEN_NAME}" \
-      --expire 0 --privsep 0 --output-format json)" \
-    || die "Falha ao criar token API para ${_PVE_TF_USER}."
-  PROXMOX_API_TOKEN="$(printf '%s' "${token_json}" \
-    | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")"
-  PROXMOX_API_TOKEN_ID="${_PVE_TF_USER}!${_PVE_TF_TOKEN_NAME}"
-  log_info "Token API ${PROXMOX_API_TOKEN_ID} criado."
+  if [[ -z "${PROXMOX_ROOT_PASSWORD}" ]]; then
+    read -r -s -p "Introduz a password root@pam do Proxmox: " PROXMOX_ROOT_PASSWORD
+    echo
+    [[ -n "${PROXMOX_ROOT_PASSWORD}" ]] || die "PROXMOX_ROOT_PASSWORD não pode ser vazio."
+  fi
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -294,9 +269,9 @@ main() {
     log_warn "ROOT_PASSWORD não definido — gerado automaticamente: ${ROOT_PASSWORD}"
   fi
 
-  # ── Step 1: Proxmox token ──────────────────────────────────────────────────
+  # ── Step 1: Proxmox credentials ───────────────────────────────────────────
 
-  ensure_proxmox_terraform_token
+  ensure_proxmox_credentials
 
   # ── Step 2: Create CT ──────────────────────────────────────────────────────
 
@@ -377,8 +352,7 @@ main() {
 
   pct exec "$VMID" -- bash -c "cat > /opt/terraform/workspace/env/${ENVIRONMENT}/proxmox-base.tfvars <<'TFEOF'
 proxmox_api_url      = \"${PROXMOX_API_URL}\"
-proxmox_api_token_id = \"${PROXMOX_API_TOKEN_ID}\"
-proxmox_api_token    = \"${PROXMOX_API_TOKEN}\"
+proxmox_password     = \"${PROXMOX_ROOT_PASSWORD}\"
 proxmox_tls_insecure = true
 root_password        = \"${ROOT_PASSWORD}\"
 TFEOF"
