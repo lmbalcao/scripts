@@ -238,15 +238,9 @@ ensure_proxmox_credentials() {
   fi
 
   if [[ -z "${PROXMOX_ROOT_PASSWORD}" ]]; then
-    if [[ -t 0 ]]; then
-      read -r -s -p "Introduz a password root@pam do Proxmox: " PROXMOX_ROOT_PASSWORD
-      echo
-      [[ -n "${PROXMOX_ROOT_PASSWORD}" ]] || die "PROXMOX_ROOT_PASSWORD não pode ser vazio."
-    else
-      die "PROXMOX_ROOT_PASSWORD não definido. Exporta a variável antes de executar:
-  export PROXMOX_ROOT_PASSWORD=<password>
-  bash <(curl -fsSL <url>)"
-    fi
+    read -r -s -p "Introduz a password root@pam do Proxmox: " PROXMOX_ROOT_PASSWORD < /dev/tty
+    echo
+    [[ -n "${PROXMOX_ROOT_PASSWORD}" ]] || die "PROXMOX_ROOT_PASSWORD não pode ser vazio."
   fi
 }
 
