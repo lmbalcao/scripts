@@ -227,6 +227,45 @@ ct_exec() {
   pct exec "$VMID" -- bash -c "$1"
 }
 
+# ── Cluster helpers ───────────────────────────────────────────────────────────
+
+discover_cluster_nodes() {
+  pvesh get /nodes --output-format json 2>/dev/null \
+    | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    for n in data:
+        print(n['node'])
+except Exception:
+    pass
+"
+}
+
+inject_ssh_key_to_nodes() {
+  local pubkey="$1"
+  local local_node
+  local_node="$(hostname -s)"
+  local authorized_keys_cmd="mkdir -p /root/.ssh && chmod 700 /root/.ssh
+grep -qxF '${pubkey}' /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' '${pubkey}' >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys"
+
+  while IFS= read -r node; do
+    [[ -z "$node" ]] && continue
+    log_info "Injectar chave SSH no node: ${node}"
+    if [[ "$node" == "$local_node" ]]; then
+      mkdir -p /root/.ssh && chmod 700 /root/.ssh
+      grep -qxF "$pubkey" /root/.ssh/authorized_keys 2>/dev/null \
+        || printf '%s\n' "$pubkey" >> /root/.ssh/authorized_keys
+      chmod 600 /root/.ssh/authorized_keys
+    else
+      ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+          "root@${node}" bash -c "$authorized_keys_cmd" \
+        || log_warn "Falhou injecção no node ${node} — verifica SSH cluster."
+    fi
+  done <<< "$(discover_cluster_nodes)"
+}
+
 # ── Proxmox credentials ───────────────────────────────────────────────────────
 
 ensure_proxmox_credentials() {
@@ -320,7 +359,17 @@ main() {
   # Minimal .terraformrc — prevents "Unable to open CLI configuration file" warning
   ct_exec "touch /opt/terraform/config/.terraformrc"
 
-  # ── Step 6: Clone repos ───────────────────────────────────────────────────
+  # ── Step 6: SSH keypair ───────────────────────────────────────────────────
+
+  log_info "Gerar par de chaves SSH no CT..."
+  ct_exec "mkdir -p /root/.ssh && chmod 700 /root/.ssh"
+  ct_exec "[ -f /root/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519 -C 'terraform@${HOSTNAME_CT}'"
+  CT_PUBKEY="$(pct exec "$VMID" -- cat /root/.ssh/id_ed25519.pub)"
+  log_info "Chave pública: ${CT_PUBKEY}"
+
+  inject_ssh_key_to_nodes "$CT_PUBKEY"
+
+  # ── Step 8: Clone repos ───────────────────────────────────────────────────
 
   local tf_url docker_url gui_url
   tf_url="$(inject_git_credentials "$GIT_TERRAFORM_REPO")"
@@ -336,7 +385,7 @@ main() {
   log_info "Clonar repo terraform-gui → /opt/terraform-gui/workspace ..."
   ct_exec "git clone '${gui_url}' /opt/terraform-gui/workspace"
 
-  # ── Step 7: Deploy docker configs ────────────────────────────────────────
+  # ── Step 9: Deploy docker configs ────────────────────────────────────────
 
   log_info "Copiar ficheiros docker..."
   ct_exec "cp /tmp/docker-repo/terraform/docker-compose.yml /opt/terraform/docker-compose.yml"
@@ -345,16 +394,17 @@ main() {
   ct_exec "cp /tmp/docker-repo/terraform-gui/docker-compose.yml /opt/terraform-gui/docker-compose.yml"
   ct_exec "cp /opt/terraform-gui/workspace/nginx.conf /opt/terraform-gui/nginx.conf"
 
-  # ── Step 8: Credentials ───────────────────────────────────────────────────
+  # ── Step 10: Credentials ─────────────────────────────────────────────────
 
   log_info "Escrever credenciais Terraform..."
   ct_exec "mkdir -p /opt/terraform/workspace/env/${ENVIRONMENT}"
 
   pct exec "$VMID" -- bash -c "cat > /opt/terraform/workspace/env/${ENVIRONMENT}/proxmox-base.tfvars <<'TFEOF'
-proxmox_api_url      = \"${PROXMOX_API_URL}\"
-proxmox_password     = \"${PROXMOX_ROOT_PASSWORD}\"
-proxmox_tls_insecure = true
-root_password        = \"${ROOT_PASSWORD}\"
+proxmox_api_url              = \"${PROXMOX_API_URL}\"
+proxmox_password             = \"${PROXMOX_ROOT_PASSWORD}\"
+proxmox_tls_insecure         = true
+root_password                = \"${ROOT_PASSWORD}\"
+proxmox_ssh_private_key_path = \"/root/.ssh/id_ed25519\"
 TFEOF"
 
   # common.tfvars (skip if already exists in repo)
@@ -367,7 +417,7 @@ COMMON_EOF
     fi
   "
 
-  # ── Step 9: Start containers ──────────────────────────────────────────────
+  # ── Step 11: Start containers ────────────────────────────────────────────
 
   log_info "Build + arrancar containers terraform (pode demorar alguns minutos)..."
   ct_exec "cd /opt/terraform && docker compose build --pull"
@@ -394,7 +444,7 @@ COMMON_EOF
   log_info "Arrancar terraform-gui..."
   ct_exec "cd /opt/terraform-gui && docker compose up -d"
 
-  # ── Step 10: Final check ──────────────────────────────────────────────────
+  # ── Step 12: Final check ─────────────────────────────────────────────────
 
   sleep 5
   local ip
