@@ -6,7 +6,7 @@
 #   export GIT_URL=https://forgejo.lbtec.org
 #   export GIT_USER=lmbalcao
 #   export GIT_PASSWORD=<token>              # opcional, para repos privados
-#   export PROXMOX_API_URL=https://proxmox.local:8006/api2/json   # opcional, auto-descoberto
+#   export PROXMOX_API_URL=https://proxmox.local:8006/             # opcional, auto-descoberto
 #   export PROXMOX_ROOT_PASSWORD=<root@pam-password>              # obrigatório (ou introduzir quando pedido)
 #   bash dev-install.sh
 #
@@ -279,7 +279,7 @@ ensure_proxmox_credentials() {
   if [[ -z "${PROXMOX_API_URL}" ]]; then
     local node_ip
     node_ip="$(hostname -I | awk '{print $1}')"
-    PROXMOX_API_URL="https://${node_ip}:8006/api2/json"
+    PROXMOX_API_URL="https://${node_ip}:8006/"
     log_info "PROXMOX_API_URL auto-descoberto: ${PROXMOX_API_URL}"
   fi
 
