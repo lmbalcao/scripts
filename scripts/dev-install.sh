@@ -401,8 +401,8 @@ main() {
   log_info "Clonar repo terraform → /opt/terraform/workspace ..."
   ct_exec "git clone '${tf_url}' /opt/terraform/workspace"
 
-  log_info "Clonar repo docker → /tmp/docker-repo ..."
-  ct_exec "git clone '${docker_url}' /tmp/docker-repo"
+  log_info "Clonar repo docker → /opt/docker-repo ..."
+  ct_exec "git clone '${docker_url}' /opt/docker-repo"
 
   log_info "Clonar repo terraform-gui → /opt/terraform-gui/workspace ..."
   ct_exec "git clone '${gui_url}' /opt/terraform-gui/workspace"
@@ -410,17 +410,17 @@ main() {
   # ── Step 9: Deploy docker configs ────────────────────────────────────────
 
   log_info "Copiar ficheiros docker..."
-  log_info "Conteúdo de /tmp/docker-repo:"
-  ct_exec "ls /tmp/docker-repo/ && ls /tmp/docker-repo/terraform/ && ls /tmp/docker-repo/terraform-gui/ 2>/dev/null || true"
+  log_info "Conteúdo de /opt/docker-repo:"
+  ct_exec "ls /opt/docker-repo/ && ls /opt/docker-repo/terraform/ && ls /opt/docker-repo/terraform-gui/ 2>/dev/null || true"
 
   log_info "cp terraform/docker-compose.yml..."
-  ct_exec "cp /tmp/docker-repo/terraform/docker-compose.yml /opt/terraform/docker-compose.yml"
+  ct_exec "cp /opt/docker-repo/terraform/docker-compose.yml /opt/terraform/docker-compose.yml"
   log_info "cp terraform/Dockerfile..."
-  ct_exec "cp /tmp/docker-repo/terraform/Dockerfile /opt/terraform/Dockerfile"
+  ct_exec "cp /opt/docker-repo/terraform/Dockerfile /opt/terraform/Dockerfile"
   log_info "cp terraform/Dockerfile.api..."
-  ct_exec "cp /tmp/docker-repo/terraform/Dockerfile.api /opt/terraform/Dockerfile.api"
+  ct_exec "cp /opt/docker-repo/terraform/Dockerfile.api /opt/terraform/Dockerfile.api"
   log_info "cp terraform-gui/docker-compose.yml..."
-  ct_exec "cp /tmp/docker-repo/terraform-gui/docker-compose.yml /opt/terraform-gui/docker-compose.yml"
+  ct_exec "cp /opt/docker-repo/terraform-gui/docker-compose.yml /opt/terraform-gui/docker-compose.yml"
   log_info "cp terraform-gui/nginx.conf..."
   ct_exec "cp /opt/terraform-gui/workspace/nginx.conf /opt/terraform-gui/nginx.conf"
 
