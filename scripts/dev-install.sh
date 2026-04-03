@@ -11,6 +11,7 @@
 #   bash dev-install.sh
 #
 set -euo pipefail
+trap 'echo -e "\033[0;31m[ERROR]\033[0m Falhou na linha $LINENO: $BASH_COMMAND" >&2' ERR
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
