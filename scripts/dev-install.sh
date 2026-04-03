@@ -337,13 +337,19 @@ main() {
   [[ -n "${TERRAFORM_SEARCHDOMAIN}" ]] && pct set "$VMID" --searchdomain "$TERRAFORM_SEARCHDOMAIN"
 
   pct start "$VMID"
-  log_info "Aguardar boot..."
-  sleep 8
+  log_info "Aguardar boot do CT..."
+  local _boot_retries=0
+  until pct exec "$VMID" -- true 2>/dev/null || (( _boot_retries++ >= 15 )); do
+    sleep 2
+  done
+  pct exec "$VMID" -- true || die "CT ${VMID} não respondeu após 30s."
 
   # ── Step 3: System packages ────────────────────────────────────────────────
 
   log_info "Instalar pacotes de sistema..."
-  ct_exec "apt-get update -qq && apt-get install -y -qq ca-certificates curl gnupg lsb-release git"
+  ct_exec "DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 apt-get update -qq"
+  ct_exec "DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 apt-get install -y -qq ca-certificates curl gnupg lsb-release git locales"
+  ct_exec "locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8 || true"
 
   # ── Step 4: Docker ────────────────────────────────────────────────────────
 
@@ -352,8 +358,15 @@ main() {
   ct_exec "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
   ct_exec "chmod a+r /etc/apt/keyrings/docker.gpg"
   ct_exec 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null'
-  ct_exec "apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin"
-  ct_exec "systemctl enable docker && systemctl start docker"
+  ct_exec "DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin"
+  ct_exec "systemctl enable docker"
+  ct_exec "systemctl start docker || true"
+  local _docker_retries=0
+  until ct_exec "docker info >/dev/null 2>&1" || (( _docker_retries++ >= 10 )); do
+    log_info "Aguardar Docker arrancar..."
+    sleep 3
+  done
+  ct_exec "docker info >/dev/null 2>&1" || log_warn "Docker pode não estar pronto — continuando."
 
   # ── Step 5: Directories ───────────────────────────────────────────────────
 
