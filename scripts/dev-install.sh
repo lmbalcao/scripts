@@ -391,6 +391,26 @@ main() {
 
   inject_ssh_key_to_nodes "$CT_PUBKEY"
 
+  # ── Step 7: Injectar chaves SSH do host no CT ─────────────────────────────
+  # Permite acesso SSH directo ao CT com as mesmas chaves do host (presuposto 0.4)
+
+  log_info "Injectar chaves SSH autorizadas do host no CT..."
+  if [[ -f /root/.ssh/authorized_keys ]] && [[ -s /root/.ssh/authorized_keys ]]; then
+    pct exec "$VMID" -- bash -c "
+      mkdir -p /root/.ssh
+      chmod 700 /root/.ssh
+      while IFS= read -r k; do
+        [[ -z \"\$k\" || \"\${k#\\#}\" != \"\$k\" ]] && continue
+        grep -qxF \"\$k\" /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' \"\$k\" >> /root/.ssh/authorized_keys
+      done
+      chmod 600 /root/.ssh/authorized_keys
+    " < /root/.ssh/authorized_keys \
+      && log_info "Chaves SSH do host injectadas no CT." \
+      || log_warn "Falhou injecção de chaves SSH do host no CT (não crítico)."
+  else
+    log_warn "Sem /root/.ssh/authorized_keys no host — a saltar injeção de chaves."
+  fi
+
   # ── Step 8: Clone repos ───────────────────────────────────────────────────
 
   local tf_url docker_url gui_url
