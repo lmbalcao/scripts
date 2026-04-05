@@ -215,6 +215,133 @@ get_ct_ip() {
   pct exec "$1" -- hostname -I 2>/dev/null | awk '{print $1}' || true
 }
 
+# ── Interactive config wizard ─────────────────────────────────────────────────
+# Skipped automatically when key variables are already set via environment.
+
+interactive_config() {
+  # Se IP ou VMID já definidos via env, assumir modo não-interactivo
+  if [[ -n "${TERRAFORM_IP}" || -n "${TERRAFORM_VMID}" ]]; then
+    log_info "Configuração detectada via variáveis de ambiente — modo não-interactivo."
+    return
+  fi
+
+  echo ""
+  echo "╔══════════════════════════════════════════════╗"
+  echo "║       Terraform Stack — Instalação           ║"
+  echo "╠══════════════════════════════════════════════╣"
+  echo "║  1. Normal   (DHCP, VMID automático)         ║"
+  echo "║  2. Custom   (IP fixo, VMID manual)          ║"
+  echo "╚══════════════════════════════════════════════╝"
+  echo ""
+
+  local mode
+  while true; do
+    read -r -p "Modo de instalação [1/2]: " mode < /dev/tty
+    case "$mode" in
+      1|2) break ;;
+      *) echo "  Opção inválida. Introduz 1 (Normal) ou 2 (Custom)." ;;
+    esac
+  done
+
+  if [[ "$mode" == "1" ]]; then
+    log_info "Modo Normal — DHCP, VMID automático."
+    return
+  fi
+
+  # ── Custom mode ──────────────────────────────────────────────────────────────
+
+  log_info "Modo Custom — preenche os campos (Enter = aceitar sugestão entre [])."
+  echo ""
+
+  # VMID
+  local vmid_input
+  while true; do
+    read -r -p "  VMID [automático]: " vmid_input < /dev/tty
+    if [[ -z "$vmid_input" ]]; then
+      break
+    elif [[ "$vmid_input" =~ ^[0-9]+$ ]] && (( vmid_input >= 100 && vmid_input <= 999999 )); then
+      TERRAFORM_VMID="$vmid_input"
+      break
+    else
+      echo "  VMID inválido — deve ser número entre 100 e 999999."
+    fi
+  done
+
+  # IP / CIDR
+  local ip_cidr
+  while true; do
+    read -r -p "  IP/CIDR (ex: 192.168.35.50/24): " ip_cidr < /dev/tty
+    if [[ -z "$ip_cidr" ]]; then
+      echo "  IP é obrigatório no modo Custom."
+    elif [[ "$ip_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+      TERRAFORM_IP="$ip_cidr"
+      break
+    else
+      echo "  Formato inválido. Usa notação IP/CIDR, ex: 192.168.35.50/24"
+    fi
+  done
+
+  # Gateway
+  local gw
+  while true; do
+    read -r -p "  Gateway (ex: 192.168.35.1): " gw < /dev/tty
+    if [[ -z "$gw" ]]; then
+      echo "  Gateway é obrigatório no modo Custom."
+    elif [[ "$gw" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+      TERRAFORM_GATEWAY="$gw"
+      break
+    else
+      echo "  Formato inválido. Introduz um endereço IPv4 válido."
+    fi
+  done
+
+  # DNS / Nameserver
+  local ns_default="${TERRAFORM_NAMESERVER:-}"
+  local ns_prompt="  Nameserver/DNS${ns_default:+ [${ns_default}]}: "
+  local ns
+  read -r -p "$ns_prompt" ns < /dev/tty
+  if [[ -n "$ns" ]]; then
+    TERRAFORM_NAMESERVER="$ns"
+  fi
+
+  # Search domain
+  local sd_default="${TERRAFORM_SEARCHDOMAIN:-}"
+  local sd_prompt="  Search domain${sd_default:+ [${sd_default}]} (vazio = nenhum): "
+  local sd
+  read -r -p "$sd_prompt" sd < /dev/tty
+  if [[ -n "$sd" ]]; then
+    TERRAFORM_SEARCHDOMAIN="$sd"
+  fi
+
+  # VLAN
+  local vlan_default="${TERRAFORM_VLAN:-nenhuma}"
+  local vlan_input
+  read -r -p "  VLAN tag [${vlan_default}] (vazio = manter): " vlan_input < /dev/tty
+  if [[ -n "$vlan_input" ]]; then
+    if [[ "$vlan_input" =~ ^[0-9]+$ ]]; then
+      TERRAFORM_VLAN="$vlan_input"
+    else
+      echo "  VLAN inválida — a manter valor actual."
+    fi
+  fi
+
+  # Resumo e confirmação
+  echo ""
+  echo "  ┌─ Resumo da configuração ─────────────────────────────"
+  printf "  │  %-18s %s\n" "VMID:"         "${TERRAFORM_VMID:-automático}"
+  printf "  │  %-18s %s\n" "IP/CIDR:"      "${TERRAFORM_IP}"
+  printf "  │  %-18s %s\n" "Gateway:"      "${TERRAFORM_GATEWAY}"
+  printf "  │  %-18s %s\n" "Nameserver:"   "${TERRAFORM_NAMESERVER:-padrão Proxmox}"
+  printf "  │  %-18s %s\n" "Search domain:" "${TERRAFORM_SEARCHDOMAIN:-nenhum}"
+  printf "  │  %-18s %s\n" "VLAN:"         "${TERRAFORM_VLAN:-nenhuma}"
+  echo "  └────────────────────────────────────────────────────────"
+  echo ""
+
+  local confirm
+  read -r -p "Confirmar instalação? [s/N]: " confirm < /dev/tty
+  [[ "${confirm,,}" == "s" ]] || die "Instalação cancelada pelo utilizador."
+}
+
 inject_git_credentials() {
   local url="$1"
   if [[ -n "${GIT_PASSWORD}" ]]; then
@@ -293,6 +420,8 @@ ensure_proxmox_credentials() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
+  interactive_config
+
   local node bridge storage_root storage_tpl template net0
 
   node="$(discover_node)"
