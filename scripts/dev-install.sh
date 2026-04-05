@@ -449,12 +449,20 @@ main() {
   log_info "Escrever credenciais Terraform..."
   ct_exec "mkdir -p /opt/terraform/workspace/env/${ENVIRONMENT}"
 
+  local _search_domain_line=""
+  [[ -n "${TERRAFORM_SEARCHDOMAIN}" ]] && \
+    _search_domain_line="default_search_domain        = \"${TERRAFORM_SEARCHDOMAIN}\""
+
   pct exec "$VMID" -- bash -c "cat > /opt/terraform/workspace/env/${ENVIRONMENT}/proxmox-base.tfvars <<'TFEOF'
 proxmox_api_url              = \"${PROXMOX_API_URL}\"
 proxmox_password             = \"${PROXMOX_ROOT_PASSWORD}\"
 proxmox_tls_insecure         = true
 root_password                = \"${ROOT_PASSWORD}\"
 proxmox_ssh_private_key_path = \"/terraform/config/id_ed25519\"
+default_lxc_template         = \"${storage_tpl}:vztmpl/${template}\"
+network_bridge               = \"${bridge}\"
+ssh_public_keys              = [\"${CT_PUBKEY}\"]
+${_search_domain_line}
 TFEOF"
 
   # common.tfvars (skip if already exists in repo)
