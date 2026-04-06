@@ -11,16 +11,11 @@
 #   bash dev-install.sh
 #
 set -euo pipefail
-trap 'echo -e "\033[0;31m[ERROR]\033[0m Falhou na linha $LINENO: $BASH_COMMAND" >&2' ERR
+trap 'printf "\033[31merror\033[0m  Falhou na linha %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+log_info()  { printf ' \033[32minfo\033[0m  %s\n' "$*"; }
+log_warn()  { printf ' \033[33mwarn\033[0m  %s\n' "$*"; }
+log_error() { printf '\033[31merror\033[0m  %s\n' "$*" >&2; }
 die()        { log_error "$*"; exit 1; }
 need_cmd()   { command -v "$1" >/dev/null 2>&1 || die "Falta o comando: $1"; }
 
