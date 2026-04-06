@@ -19,6 +19,23 @@ log_error() { printf '\033[31merror\033[0m  %s\n' "$*" >&2; }
 die()        { log_error "$*"; exit 1; }
 need_cmd()   { command -v "$1" >/dev/null 2>&1 || die "Falta o comando: $1"; }
 
+TOTAL_STEPS=10
+CURRENT_STEP=0
+
+_bar() {
+  local s=$1 t=$2 w=20 filled=0 bar='' i
+  (( t > 0 )) && filled=$(( s * w / t ))
+  for (( i=0; i<filled; i++ )); do bar+='█'; done
+  for (( i=filled; i<w; i++ )); do bar+='░'; done
+  printf '%s' "$bar"
+}
+
+step() {
+  CURRENT_STEP=$(( CURRENT_STEP + 1 ))
+  printf ' \033[32minfo\033[0m  [%s] %2d/%d  %s\n' \
+    "$(_bar "$CURRENT_STEP" "$TOTAL_STEPS")" "$CURRENT_STEP" "$TOTAL_STEPS" "$*"
+}
+
 # ── Git / repo config ─────────────────────────────────────────────────────────
 
 GIT_URL="${GIT_URL:-https://forgejo.lbtec.org}"
@@ -450,7 +467,7 @@ main() {
 
   # ── Step 2: Create CT ──────────────────────────────────────────────────────
 
-  log_info "Criar CT ${VMID} (${HOSTNAME_CT})..."
+  step "Criar CT ${VMID} (${HOSTNAME_CT})"
   pct create "$VMID" "${storage_tpl}:vztmpl/${template}" \
     --hostname "$HOSTNAME_CT" \
     --cores "$TERRAFORM_CORES" \
@@ -491,14 +508,14 @@ main() {
 
   # ── Step 3: System packages ────────────────────────────────────────────────
 
-  log_info "Instalar pacotes de sistema..."
+  step "Instalar pacotes de sistema"
   ct_exec "DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 apt-get update -qq"
   ct_exec "DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 apt-get install -y -qq ca-certificates curl gnupg lsb-release git locales"
   ct_exec "locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8 || true"
 
   # ── Step 4: Docker ────────────────────────────────────────────────────────
 
-  log_info "Instalar Docker..."
+  step "Instalar Docker"
   ct_exec "install -m 0755 -d /etc/apt/keyrings"
   ct_exec "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
   ct_exec "chmod a+r /etc/apt/keyrings/docker.gpg"
@@ -515,7 +532,7 @@ main() {
 
   # ── Step 5: Directories ───────────────────────────────────────────────────
 
-  log_info "Criar directorias..."
+  step "Criar directorias"
   ct_exec "mkdir -p /opt/terraform/data /opt/terraform/plugin-cache /opt/terraform/config"
   ct_exec "mkdir -p /opt/terraform-gui"
   ct_exec "mkdir -p /opt/data/logs"
@@ -526,7 +543,7 @@ main() {
 
   # ── Step 6: SSH keypair ───────────────────────────────────────────────────
 
-  log_info "Gerar par de chaves SSH no CT..."
+  step "Gerar chaves SSH"
   ct_exec "mkdir -p /root/.ssh && chmod 700 /root/.ssh"
   ct_exec "[ -f /root/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519 -C 'terraform@${HOSTNAME_CT}'"
   # Copiar chave para /opt/terraform/config — montado em /terraform/config dentro do Docker
@@ -539,7 +556,7 @@ main() {
   # ── Step 7: Injectar chaves SSH do host no CT ─────────────────────────────
   # Permite acesso SSH directo ao CT com as mesmas chaves do host (presuposto 0.4)
 
-  log_info "Injectar chaves SSH autorizadas do host no CT..."
+  step "Injectar chaves SSH no CT"
   if [[ -f /root/.ssh/authorized_keys ]] && [[ -s /root/.ssh/authorized_keys ]]; then
     pct exec "$VMID" -- bash -c "
       mkdir -p /root/.ssh
@@ -563,18 +580,14 @@ main() {
   docker_url="$(inject_git_credentials "$GIT_DOCKER_REPO")"
   gui_url="$(inject_git_credentials "$GIT_GUI_REPO")"
 
-  log_info "Clonar repo terraform → /opt/terraform/workspace ..."
+  step "Clonar repositórios"
   ct_exec "git clone '${tf_url}' /opt/terraform/workspace"
-
-  log_info "Clonar repo docker → /opt/docker-repo ..."
   ct_exec "git clone '${docker_url}' /opt/docker-repo"
-
-  log_info "Clonar repo terraform-gui → /opt/terraform-gui/workspace ..."
   ct_exec "git clone '${gui_url}' /opt/terraform-gui/workspace"
 
   # ── Step 9: Deploy docker configs ────────────────────────────────────────
 
-  log_info "Copiar ficheiros docker..."
+  step "Copiar ficheiros docker"
   ct_exec "cp /opt/docker-repo/terraform/docker-compose.yml /opt/terraform/docker-compose.yml"
   ct_exec "cp /opt/docker-repo/terraform/Dockerfile /opt/terraform/Dockerfile"
   ct_exec "cp /opt/docker-repo/terraform/Dockerfile.api /opt/terraform/Dockerfile.api"
@@ -583,7 +596,7 @@ main() {
 
   # ── Step 10: Credentials ─────────────────────────────────────────────────
 
-  log_info "Escrever credenciais Terraform..."
+  step "Escrever credenciais"
   ct_exec "mkdir -p /opt/terraform/workspace/env/${ENVIRONMENT}"
 
   local _search_domain_line=""
@@ -614,7 +627,7 @@ COMMON_EOF
 
   # ── Step 11: Start containers ────────────────────────────────────────────
 
-  log_info "Build + arrancar containers terraform (pode demorar alguns minutos)..."
+  step "Arrancar containers"
   ct_exec "cd /opt/terraform && docker compose build --pull"
   ct_exec "cd /opt/terraform && docker compose up -d"
 
