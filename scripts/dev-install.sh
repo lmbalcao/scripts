@@ -228,15 +228,17 @@ interactive_config() {
 
   local mode
   while true; do
-    read_tty "Modo de instalação [1/2]: " mode
+    IFS= read -r -t 5 -p "Modo de instalação [1/2, default=1]: " mode < /dev/tty || true
+    mode="${mode%$'\r'}"
+    [[ -z "$mode" ]] && mode="1"
     case "$mode" in
       1|2) break ;;
-      *) log_warn "Opção inválida. Introduz 1 (Normal) ou 2 (Custom)." ;;
+      *) log_warn "Opção inválida. Introduz 1 (Automático) ou 2 (Custom)." ;;
     esac
   done
 
   if [[ "$mode" == "1" ]]; then
-    log_info "Modo Normal — DHCP, VMID automático."
+    log_info "Modo Automático."
     return
   fi
 
