@@ -22,18 +22,10 @@ need_cmd()   { command -v "$1" >/dev/null 2>&1 || die "Falta o comando: $1"; }
 TOTAL_STEPS=10
 CURRENT_STEP=0
 
-_bar() {
-  local s=$1 t=$2 w=20 filled=0 bar='' i
-  (( t > 0 )) && filled=$(( s * w / t ))
-  for (( i=0; i<filled; i++ )); do bar+='█'; done
-  for (( i=filled; i<w; i++ )); do bar+='░'; done
-  printf '%s' "$bar"
-}
-
 step() {
   CURRENT_STEP=$(( CURRENT_STEP + 1 ))
-  printf ' \033[32minfo\033[0m  [%s] %2d/%d  %s\n' \
-    "$(_bar "$CURRENT_STEP" "$TOTAL_STEPS")" "$CURRENT_STEP" "$TOTAL_STEPS" "$*"
+  local pct=$(( CURRENT_STEP * 100 / TOTAL_STEPS ))
+  printf ' \033[32minfo\033[0m  %3d%%  %s\n' "$pct" "$*"
 }
 
 # ── Git / repo config ─────────────────────────────────────────────────────────
