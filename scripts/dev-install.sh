@@ -201,8 +201,10 @@ build_net0() {
   local net0=""
   if [[ -z "${TERRAFORM_IP}" ]]; then
     net0="name=eth0,bridge=${bridge},ip=dhcp"
-  else
+  elif [[ -n "${TERRAFORM_GATEWAY}" ]]; then
     net0="name=eth0,bridge=${bridge},ip=${TERRAFORM_IP},gw=${TERRAFORM_GATEWAY}"
+  else
+    net0="name=eth0,bridge=${bridge},ip=${TERRAFORM_IP}"
   fi
   if [[ -n "${TERRAFORM_VLAN}" ]]; then
     [[ "${TERRAFORM_VLAN}" =~ ^[0-9]+$ ]] || die "VLAN invalida: ${TERRAFORM_VLAN}"
@@ -267,33 +269,35 @@ interactive_config() {
     fi
   done
 
-  # IP / CIDR
+  # IP / CIDR (vazio = DHCP)
   local ip_cidr
   while true; do
-    read -r -p "  IP/CIDR (ex: 192.168.35.50/24): " ip_cidr < /dev/tty
+    read -r -p "  IP/CIDR [DHCP] (ex: 192.168.35.50/24): " ip_cidr < /dev/tty
     if [[ -z "$ip_cidr" ]]; then
-      echo "  IP é obrigatório no modo Custom."
+      break
     elif [[ "$ip_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
       TERRAFORM_IP="$ip_cidr"
       break
     else
-      echo "  Formato inválido. Usa notação IP/CIDR, ex: 192.168.35.50/24"
+      echo "  Formato inválido. Usa notação IP/CIDR, ex: 192.168.35.50/24 (ou Enter para DHCP)"
     fi
   done
 
-  # Gateway
-  local gw
-  while true; do
-    read -r -p "  Gateway (ex: 192.168.35.1): " gw < /dev/tty
-    if [[ -z "$gw" ]]; then
-      echo "  Gateway é obrigatório no modo Custom."
-    elif [[ "$gw" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-      TERRAFORM_GATEWAY="$gw"
-      break
-    else
-      echo "  Formato inválido. Introduz um endereço IPv4 válido."
-    fi
-  done
+  # Gateway — só pedido se IP estático; obrigatório para ter internet
+  if [[ -n "${TERRAFORM_IP}" ]]; then
+    local gw
+    while true; do
+      read -r -p "  Gateway (ex: 192.168.35.1): " gw < /dev/tty
+      if [[ -z "$gw" ]]; then
+        echo "  Gateway é obrigatório quando IP é estático."
+      elif [[ "$gw" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        TERRAFORM_GATEWAY="$gw"
+        break
+      else
+        echo "  Formato inválido. Introduz um endereço IPv4 válido."
+      fi
+    done
+  fi
 
   # DNS / Nameserver
   local ns_default="${TERRAFORM_NAMESERVER:-}"
@@ -329,8 +333,8 @@ interactive_config() {
   echo ""
   echo "  ┌─ Resumo da configuração ─────────────────────────────"
   printf "  │  %-18s %s\n" "VMID:"         "${TERRAFORM_VMID:-automático}"
-  printf "  │  %-18s %s\n" "IP/CIDR:"      "${TERRAFORM_IP}"
-  printf "  │  %-18s %s\n" "Gateway:"      "${TERRAFORM_GATEWAY}"
+  printf "  │  %-18s %s\n" "IP/CIDR:"      "${TERRAFORM_IP:-DHCP}"
+  printf "  │  %-18s %s\n" "Gateway:"      "${TERRAFORM_GATEWAY:-n/a}"
   printf "  │  %-18s %s\n" "Nameserver:"   "${TERRAFORM_NAMESERVER:-padrão Proxmox}"
   printf "  │  %-18s %s\n" "Search domain:" "${TERRAFORM_SEARCHDOMAIN:-nenhum}"
   printf "  │  %-18s %s\n" "VLAN:"         "${TERRAFORM_VLAN:-nenhuma}"
@@ -472,6 +476,16 @@ main() {
     sleep 2
   done
   pct exec "$VMID" -- true || die "CT ${VMID} não respondeu após 30s."
+
+  # Aguardar que a interface de rede tenha IP (crítico em DHCP)
+  log_info "Aguardar rede no CT..."
+  local _net_retries=0
+  until ct_exec "ip addr show eth0 2>/dev/null | grep -q 'inet '" || (( _net_retries++ >= 20 )); do
+    sleep 2
+  done
+  if ! ct_exec "ip addr show eth0 2>/dev/null | grep -q 'inet '"; then
+    log_warn "Interface eth0 sem endereço IPv4 após 40s — a continuar (apt pode falhar)."
+  fi
 
   # ── Step 3: System packages ────────────────────────────────────────────────
 
