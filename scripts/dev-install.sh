@@ -411,10 +411,9 @@ ensure_proxmox_credentials() {
   fi
 
   if [[ -z "${PROXMOX_ROOT_PASSWORD}" ]]; then
-    IFS= read -r -s -p "Introduz a password root@pam do Proxmox: " PROXMOX_ROOT_PASSWORD < /dev/tty
+    IFS= read -r -s -t 5 -p "Introduz a password root@pam do Proxmox: " PROXMOX_ROOT_PASSWORD < /dev/tty || true
     PROXMOX_ROOT_PASSWORD="${PROXMOX_ROOT_PASSWORD%$'\r'}"
     echo
-    [[ -n "${PROXMOX_ROOT_PASSWORD}" ]] || die "PROXMOX_ROOT_PASSWORD não pode ser vazio."
   fi
 }
 
