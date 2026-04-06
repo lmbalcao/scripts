@@ -233,7 +233,7 @@ interactive_config() {
 
   local mode
   while true; do
-    read -r -p "Modo de instalação [1/2]: " mode < /dev/tty
+    read_tty "Modo de instalação [1/2]: " mode
     case "$mode" in
       1|2) break ;;
       *) log_warn "Opção inválida. Introduz 1 (Normal) ou 2 (Custom)." ;;
@@ -252,7 +252,7 @@ interactive_config() {
   # VMID
   local vmid_input
   while true; do
-    read -r -p "  VMID [automático]: " vmid_input < /dev/tty
+    read_tty "  VMID [automático]: " vmid_input
     if [[ -z "$vmid_input" ]]; then
       break
     elif [[ "$vmid_input" =~ ^[0-9]+$ ]] && (( vmid_input >= 100 && vmid_input <= 999999 )); then
@@ -266,7 +266,7 @@ interactive_config() {
   # IP / CIDR (vazio = DHCP)
   local ip_cidr
   while true; do
-    read -r -p "  IP/CIDR [DHCP] (ex: 192.168.35.50/24): " ip_cidr < /dev/tty
+    read_tty "  IP/CIDR [DHCP] (ex: 192.168.35.50/24): " ip_cidr
     if [[ -z "$ip_cidr" ]]; then
       break
     elif [[ "$ip_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
@@ -281,7 +281,7 @@ interactive_config() {
   if [[ -n "${TERRAFORM_IP}" ]]; then
     local gw
     while true; do
-      read -r -p "  Gateway (ex: 192.168.35.1): " gw < /dev/tty
+      read_tty "  Gateway (ex: 192.168.35.1): " gw
       if [[ -z "$gw" ]]; then
         log_warn "Gateway é obrigatório quando IP é estático."
       elif [[ "$gw" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
@@ -297,7 +297,7 @@ interactive_config() {
   local ns_default="${TERRAFORM_NAMESERVER:-}"
   local ns_prompt="  Nameserver/DNS${ns_default:+ [${ns_default}]}: "
   local ns
-  read -r -p "$ns_prompt" ns < /dev/tty
+  read_tty "$ns_prompt" ns
   if [[ -n "$ns" ]]; then
     TERRAFORM_NAMESERVER="$ns"
   fi
@@ -306,7 +306,7 @@ interactive_config() {
   local sd_default="${TERRAFORM_SEARCHDOMAIN:-}"
   local sd_prompt="  Search domain${sd_default:+ [${sd_default}]} (vazio = nenhum): "
   local sd
-  read -r -p "$sd_prompt" sd < /dev/tty
+  read_tty "$sd_prompt" sd
   if [[ -n "$sd" ]]; then
     TERRAFORM_SEARCHDOMAIN="$sd"
   fi
@@ -314,7 +314,7 @@ interactive_config() {
   # VLAN
   local vlan_default="${TERRAFORM_VLAN:-nenhuma}"
   local vlan_input
-  read -r -p "  VLAN tag [${vlan_default}] (vazio = manter): " vlan_input < /dev/tty
+  read_tty "  VLAN tag [${vlan_default}] (vazio = manter): " vlan_input
   if [[ -n "$vlan_input" ]]; then
     if [[ "$vlan_input" =~ ^[0-9]+$ ]]; then
       TERRAFORM_VLAN="$vlan_input"
@@ -333,7 +333,7 @@ interactive_config() {
   log_info "  VLAN:          ${TERRAFORM_VLAN:-nenhuma}"
 
   local confirm
-  read -r -p "Confirmar instalação? [s/N]: " confirm < /dev/tty
+  read_tty "Confirmar instalação? [s/N]: " confirm
   [[ "${confirm,,}" == "s" ]] || die "Instalação cancelada pelo utilizador."
 }
 
@@ -344,6 +344,14 @@ inject_git_credentials() {
   else
     echo "$url"
   fi
+}
+
+# Wrapper de read que remove \r final (terminais Windows / Proxmox web console)
+read_tty() {
+  local _prompt="$1" _var="$2"
+  IFS= read -r -p "$_prompt" "$_var" < /dev/tty
+  local _val="${!_var%$'\r'}"
+  printf -v "$_var" '%s' "$_val"
 }
 
 ct_exec() {
@@ -406,7 +414,8 @@ ensure_proxmox_credentials() {
   fi
 
   if [[ -z "${PROXMOX_ROOT_PASSWORD}" ]]; then
-    read -r -s -p "Introduz a password root@pam do Proxmox: " PROXMOX_ROOT_PASSWORD < /dev/tty
+    IFS= read -r -s -p "Introduz a password root@pam do Proxmox: " PROXMOX_ROOT_PASSWORD < /dev/tty
+    PROXMOX_ROOT_PASSWORD="${PROXMOX_ROOT_PASSWORD%$'\r'}"
     echo
     [[ -n "${PROXMOX_ROOT_PASSWORD}" ]] || die "PROXMOX_ROOT_PASSWORD não pode ser vazio."
   fi
@@ -476,6 +485,12 @@ main() {
   done
   if ! ct_exec "ip addr show eth0 2>/dev/null | grep -q 'inet '"; then
     log_warn "Interface eth0 sem endereço IPv4 após 40s — a continuar (apt pode falhar)."
+  fi
+
+  # Verificar acesso internet antes de apt (gateway errado → falha cedo com mensagem clara)
+  log_info "Verificar acesso internet no CT..."
+  if ! ct_exec "ping -c1 -W5 8.8.8.8 >/dev/null 2>&1"; then
+    die "CT sem acesso internet (IP: ${TERRAFORM_IP:-DHCP}, GW: ${TERRAFORM_GATEWAY:-n/a}). Verifica configuração de rede."
   fi
 
   # ── Step 3: System packages ────────────────────────────────────────────────
