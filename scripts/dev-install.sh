@@ -180,7 +180,7 @@ discover_template() {
 ensure_template_downloaded() {
   local storage="$1" template="$2"
   pveam list "$storage" | awk '{print $1}' | grep -qx "$template" && return
-  pveam download "$storage" "$template"
+  pveam download "$storage" "$template" >/dev/null 2>&1
 }
 
 next_vmid() {
@@ -352,7 +352,7 @@ read_tty() {
 }
 
 ct_exec() {
-  pct exec "$VMID" -- bash -c "$1"
+  pct exec "$VMID" -- bash -c "$1" >/dev/null 2>&1
 }
 
 # ── Cluster helpers ───────────────────────────────────────────────────────────
@@ -461,12 +461,12 @@ main() {
     --net0 "$net0" \
     --unprivileged 1 \
     --features nesting=1 \
-    --password "$ROOT_PASSWORD"
+    --password "$ROOT_PASSWORD" >/dev/null 2>&1
 
-  [[ -n "${TERRAFORM_NAMESERVER}" ]]   && pct set "$VMID" --nameserver "$TERRAFORM_NAMESERVER"
-  [[ -n "${TERRAFORM_SEARCHDOMAIN}" ]] && pct set "$VMID" --searchdomain "$TERRAFORM_SEARCHDOMAIN"
+  [[ -n "${TERRAFORM_NAMESERVER}" ]]   && pct set "$VMID" --nameserver "$TERRAFORM_NAMESERVER" >/dev/null 2>&1
+  [[ -n "${TERRAFORM_SEARCHDOMAIN}" ]] && pct set "$VMID" --searchdomain "$TERRAFORM_SEARCHDOMAIN" >/dev/null 2>&1
 
-  pct start "$VMID"
+  pct start "$VMID" >/dev/null 2>&1
   log_info "Aguardar boot do CT..."
   local _boot_retries=0
   until pct exec "$VMID" -- true 2>/dev/null || (( _boot_retries++ >= 15 )); do
@@ -576,18 +576,10 @@ main() {
   # ── Step 9: Deploy docker configs ────────────────────────────────────────
 
   log_info "Copiar ficheiros docker..."
-  log_info "Conteúdo de /opt/docker-repo:"
-  ct_exec "ls /opt/docker-repo/ && ls /opt/docker-repo/terraform/ && ls /opt/docker-repo/terraform-gui/ 2>/dev/null || true"
-
-  log_info "cp terraform/docker-compose.yml..."
   ct_exec "cp /opt/docker-repo/terraform/docker-compose.yml /opt/terraform/docker-compose.yml"
-  log_info "cp terraform/Dockerfile..."
   ct_exec "cp /opt/docker-repo/terraform/Dockerfile /opt/terraform/Dockerfile"
-  log_info "cp terraform/Dockerfile.api..."
   ct_exec "cp /opt/docker-repo/terraform/Dockerfile.api /opt/terraform/Dockerfile.api"
-  log_info "cp terraform-gui/docker-compose.yml..."
   ct_exec "cp /opt/docker-repo/terraform-gui/docker-compose.yml /opt/terraform-gui/docker-compose.yml"
-  log_info "cp terraform-gui/nginx.conf..."
   ct_exec "cp /opt/terraform-gui/workspace/nginx.conf /opt/terraform-gui/nginx.conf"
 
   # ── Step 10: Credentials ─────────────────────────────────────────────────
