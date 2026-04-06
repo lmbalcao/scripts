@@ -227,21 +227,16 @@ interactive_config() {
     return
   fi
 
-  echo ""
-  echo "╔══════════════════════════════════════════════╗"
-  echo "║       Terraform Stack — Instalação           ║"
-  echo "╠══════════════════════════════════════════════╣"
-  echo "║  1. Normal   (DHCP, VMID automático)         ║"
-  echo "║  2. Custom   (IP fixo, VMID manual)          ║"
-  echo "╚══════════════════════════════════════════════╝"
-  echo ""
+  log_info "Terraform Stack — Instalação"
+  log_info "  1. Normal   (DHCP, VMID automático)"
+  log_info "  2. Custom   (IP fixo, VMID manual)"
 
   local mode
   while true; do
     read -r -p "Modo de instalação [1/2]: " mode < /dev/tty
     case "$mode" in
       1|2) break ;;
-      *) echo "  Opção inválida. Introduz 1 (Normal) ou 2 (Custom)." ;;
+      *) log_warn "Opção inválida. Introduz 1 (Normal) ou 2 (Custom)." ;;
     esac
   done
 
@@ -253,7 +248,6 @@ interactive_config() {
   # ── Custom mode ──────────────────────────────────────────────────────────────
 
   log_info "Modo Custom — preenche os campos (Enter = aceitar sugestão entre [])."
-  echo ""
 
   # VMID
   local vmid_input
@@ -265,7 +259,7 @@ interactive_config() {
       TERRAFORM_VMID="$vmid_input"
       break
     else
-      echo "  VMID inválido — deve ser número entre 100 e 999999."
+      log_warn "VMID inválido — deve ser número entre 100 e 999999."
     fi
   done
 
@@ -279,7 +273,7 @@ interactive_config() {
       TERRAFORM_IP="$ip_cidr"
       break
     else
-      echo "  Formato inválido. Usa notação IP/CIDR, ex: 192.168.35.50/24 (ou Enter para DHCP)"
+      log_warn "Formato inválido. Usa notação IP/CIDR, ex: 192.168.35.50/24 (ou Enter para DHCP)"
     fi
   done
 
@@ -289,12 +283,12 @@ interactive_config() {
     while true; do
       read -r -p "  Gateway (ex: 192.168.35.1): " gw < /dev/tty
       if [[ -z "$gw" ]]; then
-        echo "  Gateway é obrigatório quando IP é estático."
+        log_warn "Gateway é obrigatório quando IP é estático."
       elif [[ "$gw" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
         TERRAFORM_GATEWAY="$gw"
         break
       else
-        echo "  Formato inválido. Introduz um endereço IPv4 válido."
+        log_warn "Formato inválido. Introduz um endereço IPv4 válido."
       fi
     done
   fi
@@ -325,21 +319,18 @@ interactive_config() {
     if [[ "$vlan_input" =~ ^[0-9]+$ ]]; then
       TERRAFORM_VLAN="$vlan_input"
     else
-      echo "  VLAN inválida — a manter valor actual."
+      log_warn "VLAN inválida — a manter valor actual."
     fi
   fi
 
   # Resumo e confirmação
-  echo ""
-  echo "  ┌─ Resumo da configuração ─────────────────────────────"
-  printf "  │  %-18s %s\n" "VMID:"         "${TERRAFORM_VMID:-automático}"
-  printf "  │  %-18s %s\n" "IP/CIDR:"      "${TERRAFORM_IP:-DHCP}"
-  printf "  │  %-18s %s\n" "Gateway:"      "${TERRAFORM_GATEWAY:-n/a}"
-  printf "  │  %-18s %s\n" "Nameserver:"   "${TERRAFORM_NAMESERVER:-padrão Proxmox}"
-  printf "  │  %-18s %s\n" "Search domain:" "${TERRAFORM_SEARCHDOMAIN:-nenhum}"
-  printf "  │  %-18s %s\n" "VLAN:"         "${TERRAFORM_VLAN:-nenhuma}"
-  echo "  └────────────────────────────────────────────────────────"
-  echo ""
+  log_info "Resumo da configuração:"
+  log_info "  VMID:          ${TERRAFORM_VMID:-automático}"
+  log_info "  IP/CIDR:       ${TERRAFORM_IP:-DHCP}"
+  log_info "  Gateway:       ${TERRAFORM_GATEWAY:-n/a}"
+  log_info "  Nameserver:    ${TERRAFORM_NAMESERVER:-padrão Proxmox}"
+  log_info "  Search domain: ${TERRAFORM_SEARCHDOMAIN:-nenhum}"
+  log_info "  VLAN:          ${TERRAFORM_VLAN:-nenhuma}"
 
   local confirm
   read -r -p "Confirmar instalação? [s/N]: " confirm < /dev/tty
@@ -633,13 +624,11 @@ COMMON_EOF
   if ct_exec "curl -sf http://localhost:8765/api/health > /dev/null 2>&1"; then
     log_info "terraform-api OK."
   else
-    log_warn "terraform-api não respondeu em 60s — logs:"
-    pct exec "$VMID" -- bash -c "
-      echo '--- container status ---'
-      docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep -E 'NAMES|terraform'
-      echo '--- terraform-api logs (last 30) ---'
-      docker logs terraform-api --tail 30 2>&1 || echo '(container nao existe)'
-    " || true
+    log_warn "terraform-api não respondeu em 60s."
+    log_info "Container status:"
+    pct exec "$VMID" -- bash -c "docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep -E 'NAMES|terraform'" || true
+    log_info "terraform-api logs (last 30):"
+    pct exec "$VMID" -- bash -c "docker logs terraform-api --tail 30 2>&1 || echo '(container nao existe)'" || true
   fi
 
   log_info "Arrancar terraform-gui..."
@@ -651,31 +640,21 @@ COMMON_EOF
   local ip
   ip="$(get_ct_ip "$VMID")"
 
-  echo ""
   if ct_exec "curl -sf http://localhost:80/api/health > /dev/null 2>&1"; then
-    echo "╔══════════════════════════════════════════════════════╗"
-    echo "║  Terraform GUI instalado com sucesso!                ║"
-    echo "╠══════════════════════════════════════════════════════╣"
-    printf "║  URL:        http://%-32s║\n" "${ip}/"
-    printf "║  CT VMID:    %-38s║\n" "${VMID}"
-    printf "║  Ambiente:   %-38s║\n" "${ENVIRONMENT}"
-    printf "║  Root pass:  %-38s║\n" "${ROOT_PASSWORD}"
-    echo "╚══════════════════════════════════════════════════════╝"
+    log_info "Terraform GUI instalado com sucesso!"
+    log_info "  URL:        http://${ip}/"
+    log_info "  CT VMID:    ${VMID}"
+    log_info "  Ambiente:   ${ENVIRONMENT}"
+    log_info "  Root pass:  ${ROOT_PASSWORD}"
   else
-    echo "╔══════════════════════════════════════════════════════╗"
-    echo "║  AVISO: health check falhou                          ║"
-    echo "╠══════════════════════════════════════════════════════╣"
-    printf "║  CT VMID: %-42s║\n" "${VMID}"
-    printf "║  IP:      %-42s║\n" "${ip}"
-    echo "╚══════════════════════════════════════════════════════╝"
-    echo ""
-    echo "--- container status ---"
+    log_warn "Health check falhou."
+    log_info "  CT VMID: ${VMID}"
+    log_info "  IP:      ${ip}"
+    log_info "Container status:"
     pct exec "$VMID" -- bash -c "docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep -E 'NAMES|terraform'" || true
-    echo ""
-    echo "--- terraform-api logs ---"
+    log_info "terraform-api logs:"
     pct exec "$VMID" -- bash -c "docker logs terraform-api --tail 40 2>&1 || echo '(container nao existe)'" || true
-    echo ""
-    echo "--- terraform-gui logs ---"
+    log_info "terraform-gui logs:"
     pct exec "$VMID" -- bash -c "docker logs terraform-gui --tail 10 2>&1 || echo '(container nao existe)'" || true
   fi
 }
