@@ -223,8 +223,8 @@ interactive_config() {
   fi
 
   log_info "Terraform Stack — Instalação"
-  log_info "  1. Normal   (DHCP, VMID automático)"
-  log_info "  2. Custom   (IP fixo, VMID manual)"
+  log_info "  1. Automático"
+  log_info "  2. Custom"
 
   local mode
   while true; do
