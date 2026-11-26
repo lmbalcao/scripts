@@ -8,6 +8,28 @@ DRY_RUN="${DRY_RUN:-0}"          # 1 = só mostrar, 0 = executar
 SKIP_DIRTY="${SKIP_DIRTY:-1}"    # 1 = ignora repos com alterações por commitar
 SKIP_MIRROR="${SKIP_MIRROR:-1}"  # 1 = ignora mirror read-only
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+Uso: push-all.sh [--help|-h]
+
+Percorre todos os repos git em $BASE_DIR e faz 'git push --force-with-lease'
+da branch actual de cada um para $REMOTE. Um repo que falha não pára os
+restantes; no fim imprime "Resumo: OK=.. SKIP=.. ERRO=..".
+
+Configuração, só por variáveis de ambiente (valor por omissão entre parênteses):
+
+  BASE_DIR     directório que contém os repos        ($HOME/workspace/repos)
+  REMOTE       nome do remote para onde fazer push   (origin)
+  DRY_RUN      1 = só mostrar o que faria            (0)
+  SKIP_DIRTY   1 = ignora repos com alterações       (1)
+               por commitar
+  SKIP_MIRROR  1 = ignora repos mirror read-only     (1)
+
+Exemplo: DRY_RUN=1 BASE_DIR=~/repos bash push-all.sh
+EOF
+  exit 0
+fi
+
 cd "$BASE_DIR" || { echo "ERRO: não consigo entrar em $BASE_DIR"; exit 1; }
 
 ok=0; skipped=0; err=0
